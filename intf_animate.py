@@ -1,5 +1,19 @@
 #!/usr/bin/python
 
+"""intf_animate.py
+produces a sequence of frames to simulate high speed video type 
+imagery with the interferometer solutions
+"""
+
+########
+# Written by Michael Stock, 2012
+# versions: 
+# the intf_tools version must match intf_process for processing to work!
+#	5	-	It works!
+#	6.1	-	Converted to work with intf_tool for the git repository
+#			Added frame time to the title string for animations with the 
+#				time frame.
+
 #plotting libraries
 from matplotlib.figure import Figure,SubplotParams
 from matplotlib.font_manager import FontProperties
@@ -19,7 +33,7 @@ rc('savefig',dpi=100)
 from numpy import *
 import numpy as np
 import os,sys,argparse
-import intf_tools6 as it
+import intf_tools as it
 
 ############
 # Version
@@ -208,7 +222,8 @@ elif arguments.color == 3:
 #transparency (for the primary, the transparency is reduced)
 a = data.pkpk.copy()
 a -= min(a)
-a /= max(a)
+a /= float(max(a))
+print mean(a)
 c[:,3] = a**arguments.alphaEx
 pointSz = arguments.pointSz
 
@@ -261,7 +276,7 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 		#scale the histogram
 		aeHist[0][:] -= aeHist[0].min()
 		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**arguments.alphaEx
+			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**.3
 	else:
 		aeHist = histogram2d( 	data.elev[mask],
 								data.azim[mask],
@@ -271,7 +286,7 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 		#scale the histogram
 		aeHist[0][:] -= aeHist[0].min()
 		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**arguments.alphaEx
+			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**.3
 	ax1 = fig.add_subplot(111,axisbg=face)
 
 	if arguments.cos:
@@ -318,6 +333,11 @@ def bgPlot( data,iT,black, tStep, bgHist, titleS=None ):
 	fig = Figure( figsize=(6.4,4.8) )
 	fig.subplotpars = SubplotParams(left=.10,right=.95,bottom=.125,top=.80)
 	gs = gridspec.GridSpec(2, 2)
+
+	if titleS:
+		titleS += '\n%4.3f'%iT
+	else:
+		titleS = '%4.3f'%iT
 	
 	if titleS:
 		fig.text(0.5,.95, titleS, color=txtc,
@@ -341,7 +361,7 @@ def bgPlot( data,iT,black, tStep, bgHist, titleS=None ):
 		#scale the histogram
 		aeHist[0][:] -= aeHist[0].min()
 		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**arguments.alphaEx
+			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**0.3
 	else:
 		aeHist = histogram2d( 	data.elev[mask],
 								data.azim[mask],
@@ -351,7 +371,7 @@ def bgPlot( data,iT,black, tStep, bgHist, titleS=None ):
 		#scale the histogram
 		aeHist[0][:] -= aeHist[0].min()
 		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**arguments.alphaEx
+			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**0.3
 	ax1 = fig.add_subplot(gs[:,0],axisbg=face)
 	if arguments.cos:
 		ax1.plot(circX,circY,c=txtc,ls='-')
@@ -447,7 +467,7 @@ etHist = histogram2d( 	data.elev,
 						range=[data.elRange,data.tRange] )
 #Scale
 etHist[0][:] -= etHist[0].min()
-etHist[0][:] = (etHist[0]/etHist[0].max())**(arguments.alphaEx/2)
+etHist[0][:] = (etHist[0]/etHist[0].max())**(.15)
 
 nZoom = (data.tRange[1]-data.tRange[0])/arguments.zoomtime
 etzHist = histogram2d( 	data.elev,
@@ -457,7 +477,7 @@ etzHist = histogram2d( 	data.elev,
 						range=[data.elRange,data.tRange] )
 #Scale
 etzHist[0][:] -= etzHist[0].min()
-etzHist[0][:] = (etzHist[0]/etzHist[0].max())**(arguments.alphaEx/4)
+etzHist[0][:] = (etzHist[0]/etzHist[0].max())**(0.075)
 
 while iT < data.tRange[1]:
 	if len(frames) < 10:
@@ -519,8 +539,8 @@ while iT < data.tRange[1]:
 						c=iC, marker='o',
 						s=pointSz, edgecolor='None' )
 	else:
-		ax[0].scatter( 	data.elev[mask], 
-						data.azim[mask], 
+		ax[0].scatter( 	data.azim[mask], 
+						data.elev[mask], 
 						c=iC, marker='o',
 						s=pointSz, edgecolor='None' )
 	

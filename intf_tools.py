@@ -27,6 +27,7 @@ import numpy as np	#this covers the times when I do things the 'right' way
 #sys does program operations (exit, get argruments, etc)
 #argparse parses command line arguments (once you get them)
 import os,sys,argparse,struct,time,gzip
+from matplotlib import colors
 
 
 ###################
@@ -51,6 +52,73 @@ Re   = 6378100		    #meters
 #this is the global settings class
 Settings   = None #to be initialized later
 
+#~ colorDict = {	'red': ( 	(0.00, 0.3, 0.3),
+							#~ (0.15, 0.0, 0.0),
+							#~ (0.20, 0.0, 0.0),
+							#~ (0.50, 0.0, 0.0),
+							#~ (0.70, 1.0, 1.0),
+							#~ (0.90, 0.9, 0.9),
+							#~ (1.00, 1.0, 1.0) ),
+				#~ 'green':(	(0.00, 0.0, 0.0),
+							#~ (0.15, 0.0, 0.0),
+							#~ (0.25, 0.3, 0.3),
+							#~ (0.45, 1.0, 1.0),
+							#~ (0.70, 0.9, 0.9),
+							#~ (0.90, 0.0, 0.0),
+							#~ (1.00, 0.0, 0.0) ),
+				#~ 'blue':(	(0.00, 0.5, 0.5),
+							#~ (0.20, 1.0, 1.0),
+							#~ (0.45, 1.0, 1.0),
+							#~ (0.50, 0.1, 0.1),
+							#~ (0.70, 0.0, 0.0),
+							#~ (0.90, 0.0, 0.0),
+							#~ (1.00, 0.9, 0.9) ) }
+#~ cmap_mjet   = colors.LinearSegmentedColormap('mjet',colorDict,256)
+
+### same color map, goes to red at the end
+#~ colorDict = {	'red': ( 	(0.00, 0.3, 0.3),
+							#~ (0.15, 0.0, 0.0),
+							#~ (0.20, 0.0, 0.0),
+							#~ (0.50, 0.0, 0.0),
+							#~ (0.70, 0.9, 0.9),
+							#~ (1.00, 1.0, 1.0) ),
+				#~ 'green':(	(0.00, 0.0, 0.0),
+							#~ (0.15, 0.0, 0.0),
+							#~ (0.25, 0.3, 0.3),
+							#~ (0.45, 1.0, 1.0),
+							#~ (0.70, 0.9, 0.9),
+							#~ (1.00, 0.0, 0.0) ),
+				#~ 'blue':(	(0.00, 0.5, 0.5),
+							#~ (0.20, 1.0, 1.0),
+							#~ (0.45, 1.0, 1.0),
+							#~ (0.50, 0.1, 0.1),
+							#~ (0.70, 0.0, 0.0),
+							#~ (1.00, 0.0, 0.0) ) }
+#~ cmap_mjet   = colors.LinearSegmentedColormap('mjet',colorDict,256)
+
+### again same color map, goes to dark red at the end
+colorDict = {	'red': ( 	(0.00, 0.3, 0.3),
+							(0.15, 0.0, 0.0),
+							(0.20, 0.0, 0.0),
+							(0.50, 0.0, 0.0),
+							(0.70, 1.0, 1.0),
+							(0.90, 1.0, 1.0),
+							(1.00, 0.7, 0.7) ),
+				'green':(	(0.00, 0.0, 0.0),
+							(0.15, 0.0, 0.0),
+							(0.25, 0.3, 0.3),
+							(0.45, 1.0, 1.0),
+							(0.70, 0.9, 0.9),
+							(0.90, 0.0, 0.0),
+							(1.00, 0.0, 0.0) ),
+				'blue':(	(0.00, 0.5, 0.5),
+							(0.20, 1.0, 1.0),
+							(0.45, 1.0, 1.0),
+							(0.50, 0.1, 0.1),
+							(0.70, 0.0, 0.0),
+							(0.90, 0.0, 0.0),
+							(1.00, 0.0, 0.0) ) }
+cmap_mjet   = colors.LinearSegmentedColormap('mjet',colorDict,256)
 
 
 #####
@@ -571,6 +639,7 @@ class LmaData():
 		self.z    = []
 		self.chisq= []
 		self.pwr  = []
+		self.charge=[]
 		self.mask = []
 		self.cosa = []
 		self.cosb = []
@@ -578,13 +647,26 @@ class LmaData():
 		lineS = f.readline().strip().split()
 		t0 = int(float(lineS[0]))
 		while lineS != []:
-			t    = float(lineS[1])
-			lat  = float(lineS[1])*pi/180
-			lon  = float(lineS[2])*pi/180
-			alt  = float(lineS[3])
-			chisq= float(lineS[4])
-			pwr  = float(lineS[5])
-			mask = int(lineS[6],16)
+			if len(lineS) == 7:
+				t    = float(lineS[0])
+				lat  = float(lineS[1])*pi/180
+				lon  = float(lineS[2])*pi/180
+				alt  = float(lineS[3])
+				chisq= float(lineS[4])
+				pwr  = float(lineS[5])
+				mask = int(lineS[6],16)
+				charge=0
+				stats= 0#not really, but I'm not ready do deal with this yet
+			elif len(lineS) == 9:
+				t    = float(lineS[0])
+				lat  = float(lineS[1])*pi/180
+				lon  = float(lineS[2])*pi/180
+				alt  = float(lineS[3])
+				chisq= float(lineS[4])
+				stats= int(  lineS[5])
+				pwr  = float(lineS[6])
+				charge=int(  lineS[7])
+				mask = int(  lineS[8])
 			
 			(Az,El,r) = calc_range_bearing(lat,lon,alt)
 			
@@ -603,9 +685,10 @@ class LmaData():
 			self.z.append(z)
 			self.chisq.append(chisq)
 			self.pwr.append(pwr)
+			self.charge.append(charge)
 			self.mask.append(mask)
-			self.cosb.append( cos(El/180*pi )*sin(Az/180*pi) )
-			self.cosa.append( cos(El/180*pi )*cos(Az/180*pi) )
+			self.cosb.append( cos(El/180*pi )*cos(Az/180*pi) )
+			self.cosa.append( cos(El/180*pi )*sin(Az/180*pi) )
 
 			lineS = f.readline().strip().split()
 
@@ -621,6 +704,7 @@ class LmaData():
 		self.y    = array(self.y)
 		self.z    = array(self.z)
 		self.chisq= array(self.chisq)
+		self.charge=array(self.charge)
 		self.pwr  = array(self.pwr)
 		self.mask = array(self.mask)
 		self.cosa = array(self.cosa)
@@ -638,7 +722,57 @@ class ProcData():
 		#we store the raw data (un filtered)
 		#and we store the filtered data
 		self.rawData = data
+		if isinstance(header,str):
+			#this is old old v3 data!!!
+			try:
+				#fake some important header items
+				year   = int( header.split('_')[1].split('.')[0] )
+				month  = int( header.split('_')[1].split('.')[1] )
+				day    = int( header.split('_')[1].split('.')[2] )
+				hour   = int( header.split('_')[2].split('.')[0] )
+				minute = int( header.split('_')[2].split('.')[1] )
+				second = int( header.split('_')[2].split('.')[2] )
+			except:
+				raise ValueError('could not parse filename: %s'%header)
+				return
+			header = {}
+			header[ 'year'   ] = year
+			header[ 'month'  ] = month
+			header[ 'day'    ] = day
+			header[ 'hour'   ] = hour
+			header[ 'minute' ] = minute
+			header[ 'second' ] = second
+			header['TriggerTime'] = '%04i/%02i/%02i %02i:%02i:%02i'%(
+									year,
+									month,
+									day,
+									hour,
+									minute,
+									second)
+			header['columns'] = [	'Time',
+									'Azimuth',
+									'Elevation',
+									'cosa',
+									'cosb',
+									'Pk2Pk',
+									'RMS',
+									'eXpk',
+									'eCls',
+									'fwhm',
+									'eStd',
+									'eMlt',
+									'Red',
+									'Green',
+									'Blue',
+									'startSample',
+									'iMax']
+			#these are guesses
+			header[ 'numIterate'] = 64
+			header[ 'numSamples'] = 256
+			header[ 'numInterp' ] = 2
+			v3 = True
 		if isinstance(header,dict):
+			print 'building header from dictionary'
 			header = ProcHeader(header)
 		self.header = header
 		
@@ -678,6 +812,7 @@ class ProcData():
 		self.iGrn  = header.columns.index('Blue')
 		self.isSmp = header.columns.index('startSample')
 		self.iiMax = header.columns.index('iMax')
+			
 		
 		if self.header.numIterate < self.header.numSamples:
 			#we do a normal filter
@@ -752,10 +887,11 @@ class ProcData():
 		self.iMax = self.data[self.iiMax][self.mask]
 		
 		self.aMax = self.data[self.ipkpk].max()
-		N = len(self.time)
-		self.a95  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[ 19*N/20 ]]
-		self.a05  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[  1*N/20 ]]
+		N = len(self.data[self.ipkpk])
+		self.a95  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[ 99*N/100 ]]
+		self.a05  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[  1*N/20  ]]
 		self.aMin = self.data[self.ipkpk].min()
+		print N,self.aMin, self.a05, self.a95, self.aMax
 		
 		#make the bghist for the overview
 		self.dataHist = np.histogram2d(   self.elev, 
@@ -897,6 +1033,8 @@ def read_data_file(inFileS):
 		data = read_hdf5_file(inFileS)
 	elif (extS == '.dat') or (inFileS[-6:]=='dat.gz'):
 		data = read_ascii_file(inFileS)
+	elif extS == '.csv':
+		data = read_ascii_file(inFileS)
 	else:
 		raise TypeError('Invalid File Type')
 	
@@ -919,7 +1057,10 @@ def read_ascii_file(inFileS):
 	f.close()
 	
 	header,data = parse_ascii_data(lines_i)
-	return ProcData(header,data)
+	if header != None:
+		return ProcData(header,data)
+	else:
+		return ProcData(inFileS,data)
 		
 def parse_ascii_header(lines_i):
 		output = {}
@@ -970,7 +1111,10 @@ def parse_ascii_data(lines_i):
 	i = 0
 	while lines_i[i][0] == '#':
 		i+=1
-	header = ProcHeader( parse_ascii_header(lines_i[:i]) )
+	if i > 0:
+		header = ProcHeader( parse_ascii_header(lines_i[:i]) )
+	else:
+		header = None
 
 	#build the data array (the big thing)
 	#initialize the array
@@ -979,11 +1123,24 @@ def parse_ascii_data(lines_i):
 	M = len(lines_i[i].split())
 	#M better be 16
 	print N,M
+	if M < 16:
+		#old v3 data without cosa, cosb
+		M += 2
 	data = np.empty( (M,N) )
 	#go through each line and convert
 	while i < N+H:
 		lineS = lines_i[i]
-		data[ :,i-H ] = np.fromstring(lineS, sep=' ')
+		if header == None:
+			#v3 data
+			tmp  = np.fromstring(lineS, sep=' ')
+			cosa = cos(tmp[1]*pi/180)*cos(tmp[2]*pi/180)
+			cosb = sin(tmp[1]*pi/180)*cos(tmp[2]*pi/180)
+			data[:3,i-H] = tmp[:3]
+			data[3 ,i-H] = cosa
+			data[4 ,i-H] = cosb
+			data[5:,i-H] = tmp[3:]
+		else:
+			data[ :,i-H ] = np.fromstring(lineS, sep=' ')
 		i += 1
 	
 	return header, data
@@ -1057,24 +1214,24 @@ def rms(arr):
 def calc_range_bearing(lat,lon,alt):
 	#distance
 	#d is along the earth
-	a = sin( (gIntfLoc[0]-lat)/2 )**2 + cos(gIntfLoc[0])*cos(lat)*sin( (gIntfLoc[1]-lon)/2 )**2
+	a = sin( (Settings.intfLoc[0]-lat)/2 )**2 + cos(Settings.intfLoc[0])*cos(lat)*sin( (Settings.intfLoc[1]-lon)/2 )**2
 	d = Re*2*arctan2( sqrt(a), sqrt(1-a) )
 
 	#print d, alt2, alt1
 	#elevation
-	El = arctan( abs(alt-gIntfLoc[2])/d )
+	El = arctan( abs(alt-Settings.intfLoc[2])/d )
 	#get the range
 	r  = d/cos(El)
 
 	#bearing
-	Az = arctan2( sin(lon-gIntfLoc[1])*cos(lat), cos(gIntfLoc[0])*sin(lat)-sin(gIntfLoc[0])*cos(lat)*cos(lon-gIntfLoc[1]) )
+	Az = arctan2( sin(lon-Settings.intfLoc[1])*cos(lat), cos(Settings.intfLoc[0])*sin(lat)-sin(Settings.intfLoc[0])*cos(lat)*cos(lon-Settings.intfLoc[1]) )
 	if Az < 0:
 		Az += 2*pi
 	
 	return (Az*180/pi, El*180/pi, r)
 
 def calc_xyz( Az, El, r ):
-	z = r*sin( El/180*pi ) + gIntfLoc[2]
+	z = r*sin( El/180*pi ) + Settings.intfLoc[2]
 	d = r*cos( El/180*pi )
 	x = d*sin( Az/180*pi )
 	y = d*cos( Az/180*pi )
@@ -1490,6 +1647,36 @@ def calc_delay(d1,d2):
 	expk  = max( x12 )
 	
 	return s12, iMax, [epkpk,erms,expk]
+
+def place_label(ax,s,ar=1,size=12,box=True,figSize=(6.5,4)):
+	import matplotlib as mpl
+	#the ar is used because for axes with equal aspect, the 
+	#get_position call returns bogus shit
+	offset = 0.07	#in inches!
+	texth  = size/100.
+	#this is more complicated than it should be
+	axBox = ax.get_position().get_points()
+	axAsp = ax.get_data_ratio()
+	w = diff(axBox[:,0])[0]*figSize[0]
+	h = diff(axBox[:,1])[0]*figSize[1]*ar
+	print w,h
+	bbox=mpl.patches.Rectangle( (0,1-(2*offset+texth)/h),
+			width=(2*offset+texth)/w,
+			height=(2*offset+texth)/h,
+			facecolor=(1,1,1),
+			alpha=.8,
+			transform=ax.transAxes)
+	#an odd way of doing this
+	if box:
+		p = ax.add_patch(bbox)
+		p.set_zorder=10
+	t = ax.text( 0+offset/w,1-(offset+texth)/h,s , 
+		horizontalalignment='left',
+		verticalalignment='baseline',
+		transform=ax.transAxes,
+		size=size)
+	t.set_zorder(11)
+
 
 ##########
 # Initialize some things
