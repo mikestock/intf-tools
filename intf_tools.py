@@ -627,22 +627,31 @@ class LmaData():
 		lineS = f.readline()
 		while lineS.strip() != '*** data ***':
 			lineS = f.readline()
-
-		self.time = []
-		self.azim = []
-		self.elev = []
-		self.rang = []
-		self.lat  = []
-		self.lon  = []
-		self.x    = []
-		self.y    = []
-		self.z    = []
-		self.chisq= []
-		self.pwr  = []
-		self.charge=[]
-		self.mask = []
-		self.cosa = []
-		self.cosb = []
+		
+		self.azRange = [0,360]	#degrees
+		self.elRange = [0,90]
+		self.caRange = [-1.,1.]	#cosine projection
+		self.cbRange = [-1.,1.]
+		self.xRange  = [-20,20]	#km
+		self.yRange	 = [-20,20]
+		self.zRange  = [3,20]
+		self.ciRange = [0,100]	#chisq for lma data
+		
+		self._time = []
+		self._azim = []
+		self._elev = []
+		self._rang = []
+		self._lat  = []
+		self._lon  = []
+		self._x    = []
+		self._y    = []
+		self._z    = []
+		self._chisq= []
+		self._pwr  = []
+		self._charge=[]
+		self._mask = []
+		self._cosa = []
+		self._cosb = []
 
 		lineS = f.readline().strip().split()
 		t0 = int(float(lineS[0]))
@@ -657,6 +666,16 @@ class LmaData():
 				mask = int(lineS[6],16)
 				charge=0
 				stats= 0#not really, but I'm not ready do deal with this yet
+			elif len(lineS) == 8:
+				t    = float(lineS[0])
+				lat  = float(lineS[1])*pi/180
+				lon  = float(lineS[2])*pi/180
+				alt  = float(lineS[3])
+				chisq= float(lineS[4])
+				stats= int(  lineS[5])
+				pwr  = float(lineS[6])
+				charge=0
+				mask = int(  lineS[7], 16)				
 			elif len(lineS) == 9:
 				t    = float(lineS[0])
 				lat  = float(lineS[1])*pi/180
@@ -666,49 +685,93 @@ class LmaData():
 				stats= int(  lineS[5])
 				pwr  = float(lineS[6])
 				charge=int(  lineS[7])
-				mask = int(  lineS[8])
+				mask = int(  lineS[8], 16)
+			else:
+				print len(lineS)
 			
 			(Az,El,r) = calc_range_bearing(lat,lon,alt)
+			t += r/3e8
 			
 			
 			#calculate x,y,z
 			(x,y,z) = calc_xyz( Az, El, r )
 			
-			self.time.append(t)
-			self.azim.append(Az)
-			self.elev.append(El)
-			self.rang.append(r)
-			self.lat.append(lat*180/pi)
-			self.lon.append(lon*180/pi)
-			self.x.append(x)
-			self.y.append(y)
-			self.z.append(z)
-			self.chisq.append(chisq)
-			self.pwr.append(pwr)
-			self.charge.append(charge)
-			self.mask.append(mask)
-			self.cosb.append( cos(El/180*pi )*cos(Az/180*pi) )
-			self.cosa.append( cos(El/180*pi )*sin(Az/180*pi) )
+			self._time.append(t)
+			self._azim.append(Az)
+			self._elev.append(El)
+			self._rang.append(r)
+			self._lat.append(lat*180/pi)
+			self._lon.append(lon*180/pi)
+			self._x.append(x)
+			self._y.append(y)
+			self._z.append(z)
+			self._chisq.append(chisq)
+			self._pwr.append(pwr)
+			self._charge.append(charge)
+			self._mask.append(mask)
+			self._cosb.append( cos(El/180*pi )*sin(Az/180*pi) )
+			self._cosa.append( cos(El/180*pi )*cos(Az/180*pi) )
 
 			lineS = f.readline().strip().split()
 
 		f.close()
-		self.time = array(self.time)
-		self.azim = array(self.azim)
-		self.elev = array(self.elev)
-		self.rang = array(self.rang)
-		self.lat  = array(self.lat)
-		self.lon  = array(self.lon)
-		self.alt  = array(self.z)
-		self.x    = array(self.x)
-		self.y    = array(self.y)
-		self.z    = array(self.z)
-		self.chisq= array(self.chisq)
-		self.charge=array(self.charge)
-		self.pwr  = array(self.pwr)
-		self.mask = array(self.mask)
-		self.cosa = array(self.cosa)
-		self.cosb = array(self.cosb)
+		self._time = array(self._time)
+		self._azim = array(self._azim)
+		self._elev = array(self._elev)
+		self._rang = array(self._rang)
+		self._lat  = array(self._lat)
+		self._lon  = array(self._lon)
+		self._alt  = array(self._z)
+		self._x    = array(self._x)
+		self._y    = array(self._y)
+		self._z    = array(self._z)
+		self._chisq= array(self._chisq)
+		self._charge=array(self._charge)
+		self._pwr  = array(self._pwr)
+		self._mask = array(self._mask)
+		self._cosa = array(self._cosa)
+		self._cosb = array(self._cosb)
+		
+	
+		#convert the time array
+		self._time -= t0
+		self._time *= 1000
+
+		self.tRange = self._time[0],self._time[-1]
+		print self.tRange
+
+		#print self._time[0]
+		self.time = []
+		self.limits()
+		
+	def limits (self):
+		""" limit the data based on the ranges"""
+		mask = 	(self._time>=self.tRange[0] )&(self._time<=self.tRange[1]) &\
+				(self._azim>=self.azRange[0])&(self._azim<=self.azRange[1]) &\
+				(self._elev>=self.elRange[0])&(self._elev<=self.elRange[1]) &\
+				(self._cosa>=self.caRange[0])&(self._cosa<=self.caRange[1]) &\
+				(self._cosb>=self.cbRange[0])&(self._cosb<=self.cbRange[1]) &\
+				(self._chisq>=self.ciRange[0])&(self._chisq<=self.ciRange[1])
+		
+		print len(self.time),
+		self.time = self._time[mask]
+		self.azim = self._azim[mask]
+		self.elev = self._elev[mask]
+		self.rang = self._rang[mask]
+		self.lat  = self._lat [mask]
+		self.lon  = self._lon [mask]
+		self.alt  = self._alt [mask]
+		self.x    = self._x   [mask]
+		self.y    = self._y   [mask]
+		self.z    = self._z   [mask]
+		self.chisq= self._chisq[mask]
+		self.charge= self._charge[mask]
+		self.pwr  = self._pwr [mask]
+		self.cosa = self._cosa[mask]
+		self.cosb = self._cosb[mask]
+		print len(self.time)
+				
+		
 
 class ProcData():
 	
@@ -782,6 +845,7 @@ class ProcData():
 		self.TriggerTimeS = header.TriggerTime
 		self.tStart   = np.floor( min( self.rawData[0] ) )
 		self.tStop    = np.ceil(  max( self.rawData[0] ) )
+		self.tOffset  = 0
 		#limits
 		self.tRange   = [self.tStart,self.tStop]	#time
 		self.azRange  = [0,360]		#azimuth
@@ -835,7 +899,27 @@ class ProcData():
 										   weights=self.pkpk, 
 										   bins=[self.nbins/2,self.nbins], 
 										   range=([0,90],[self.tStart,self.tStop]) )		
+	
+	def time_from_second(self):
+		"""time_from_second(self)
+		adjusts the time array to count from the beginning of the second, 
+		or at least attempts to do that.  It is accurate to about 1 ms
+		"""
+		print self.tStart
+		try:
+			tStartOff = self.tStart-self.tStart%1000
+			tOffset   = self.header.uSecond/1000-tStartOff
+			print 'found usecond data'
+		except:
+			tOffset = -self.tStart
+			print 'didn\'t find usecond data'
+		self.tRange[0] = self.tRange[0] - self.tOffset + tOffset
+		self.tRange[1] = self.tRange[1] - self.tOffset + tOffset
+		self.tOffset   = tOffset
+		self.update()
+		return self.tOffset	#this is incase other programs code needs to track this
 		
+	
 	def sort(self, arr):
 		self.mask = self.mask[ arr.argsort() ]
 		self.update()
@@ -843,9 +927,9 @@ class ProcData():
 	def reset_limits(self):
 		self.tStart   = np.floor( min( self.rawData[0] ) )
 		self.tStop    = np.ceil(  max( self.rawData[0] ) )
-		self.tRange   = [self.tStart,self.tStop]	#time
+		self.tRange   = [self.tStart+self.tOffset,self.tStop+self.tOffset]	#time
 		self.azRange  = [0,360]		#azimuth
-		self.elRange  = [-30,90]	#elevation
+		self.elRange  = [0,90]	#elevation
 		self.caRange  = [-1.1,1.1]	#cosa
 		self.cbRange  = [-1.1,1.1]	#cosb
 		self.limits()
@@ -855,8 +939,8 @@ class ProcData():
 		#the mask is a set of indices so that the data can be sorted 
 		#in interesting ways
 		self.mask = where(
-					(self.data[self.iTime]>=self.tRange[0])&
-					(self.data[self.iTime]<=self.tRange[1])&
+					(self.data[self.iTime]>=self.tRange[0] - self.tOffset)&
+					(self.data[self.iTime]<=self.tRange[1] - self.tOffset)&
 					(self.data[self.iAzim]>=self.azRange[0])&
 					(self.data[self.iAzim]<=self.azRange[1])&
 					(self.data[self.iElev]>=self.elRange[0])&
@@ -871,7 +955,7 @@ class ProcData():
 	def update(self):
 		#set all data variables
 		#Time, Azimuth, Elevation, cosa, cosb, Pk2Pk, RMS, eXpk, eCls, eStd, eMlt, Red, Green, Blue, startSample, iMax   
-		self.time = self.data[self.iTime][self.mask]
+		self.time = self.data[self.iTime][self.mask] + self.tOffset
 		self.azim = self.data[self.iAzim][self.mask]
 		self.elev = self.data[self.iElev][self.mask]
 		self.cosa = self.data[self.icosa][self.mask]
@@ -1156,10 +1240,10 @@ def read_noise_spectra(fileS=None):
 	if fileS == None:
 		fileS = Settings.noiseFileS
 	
-	if not os.path.exists(noiseFileS):
+	if not os.path.exists(fileS):
 		print "Error: noise spectra missing"
-		return
-	spec = loadtxt(noiseFileS)
+		sys.exit(1)
+	spec = loadtxt(fileS)
 	NoiseSpectra[ (0,1) ] = spec[:,0] + spec[:,1]*1J
 	NoiseSpectra[ (0,2) ] = spec[:,2] + spec[:,3]*1J
 	NoiseSpectra[ (0,3) ] = spec[:,4] + spec[:,5]*1J

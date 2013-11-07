@@ -35,7 +35,8 @@ colorDict = {	'red': ( 	(0.0, 0.3, 0.3),
 							(0.55, 0.0, 0.0),
 							(0.8, 0.0, 0.0),
 							(1.0, 0.0, 0.0) ) }
-gCmap   = colors.LinearSegmentedColormap('wjet',colorDict,256)
+#gCmap   = colors.LinearSegmentedColormap('wjet',colorDict,256)
+gCmap   = it.cmap_mjet
 
 class MainTab(wx.Panel):
 	def __init__(self, parent,root):
@@ -585,6 +586,7 @@ class PlotPanel(wx.Panel):
 		self.ax2Coll = None
 		self.ax3Coll = None
 		self.ax1Lma  = None
+		self.ax3Lma  = None
 		
 		gs = gridspec.GridSpec(2, 2)
 
@@ -910,7 +912,7 @@ class PlotPanel(wx.Panel):
 							self.lma.cosa,
 							s=6,
 							marker=self.marker,
-							facecolor='k',
+							facecolor=(0,0,0,.7),
 							edgecolor='None' )
 			
 			self.ax1.set_ylabel('cosa')
@@ -933,7 +935,7 @@ class PlotPanel(wx.Panel):
 							self.lma.elev,
 							s=6,
 							marker=self.marker,
-							facecolor='k',
+							facecolor=(0,0,0,.5),
 							edgecolor='None' )
 			
 			self.ax1.set_xlim( self.data.azRange )
@@ -945,6 +947,8 @@ class PlotPanel(wx.Panel):
 		#Zoom plot (remake)
 		if self.ax3Coll != None:
 			self.ax3Coll.remove()
+		if self.ax3Lma != None:
+			self.ax3Lma.remove()
 		
 		self.ax3Coll = self.ax3.scatter( 
 						  self.data.time,
@@ -953,6 +957,14 @@ class PlotPanel(wx.Panel):
 						  marker=self.marker,
 						  facecolor=self.color,
 						  edgecolor=(1,1,1,0) )
+		if self.lma != None:
+			self.ax3Lma = self.ax3.scatter( 
+							self.lma.time, 
+							self.lma.elev, 
+							s = 6,
+							marker = self.marker, 
+							facecolor=(0,0,0,.5),
+							edgecolor='None' )
 		self.ax3.set_xlim( self.data.tRange )
 		self.ax3.set_ylim( self.data.elRange )
 		self.ax3.set_xlabel('Time (ms)')
@@ -1011,6 +1023,7 @@ class MainFrame(wx.Frame):
 		print 'reading data',inFileS
 		self.inFileS = inFileS
 		self.plotPanel.data = it.read_data_file(inFileS)
+		self.plotPanel.data.time_from_second()
 		print 'making plot'
 		self.plotPanel.mkPlot()
 		#self.plotPanel.UpdatePlot()	

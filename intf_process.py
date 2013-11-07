@@ -44,7 +44,7 @@ AntOrders = [ 	[1, 0, 2],
 
 #########
 #Helper Functions
-import intf_tools6 as st
+import intf_tools as st
 
 def pkpk(arr):
 	return arr.max() - arr.min()
@@ -158,21 +158,21 @@ def process_window(data,lastEvent,ants,Settings):
 		#Estimate the signal spectra
 		key = tuple( sorted( (ants[0],ants[1]) ))
 		Y01 = st.symm_smooth( abs(fft0*fft1.conj()), 2 ) - \
-				abs( st.Spectra[ key ] )
+				abs( st.NoiseSpectra[ key ] )
 		Y01[Y01<0] = 0
 		key = tuple( sorted( (ants[0],ants[2]) ))
 		Y02 = st.symm_smooth( abs(fft0*fft2.conj()), 2 ) - \
-				abs( st.Spectra[ key ] )
+				abs( st.NoiseSpectra[ key ] )
 		Y02[Y02<0] = 0
 		key = tuple( sorted( (ants[1],ants[2]) ))
 		Y12 = st.symm_smooth( abs(fft1*fft2.conj()), 2 ) - \
-				abs( st.Spectra[ key ] )
+				abs( st.NoiseSpectra[ key ] )
 		Y12[Y12<0] = 0
 
 		#load the noise auto spectra	
-		AN0 = abs(st.Spectra[ants[0]])
-		AN1 = abs(st.Spectra[ants[1]])
-		AN2 = abs(st.Spectra[ants[2]])
+		AN0 = abs(st.NoiseSpectra[ants[0]])
+		AN1 = abs(st.NoiseSpectra[ants[1]])
+		AN2 = abs(st.NoiseSpectra[ants[2]])
 
 		W01 = Y01/(AN0*AN1 + Y01*(AN0+AN1) + Y01**2)
 		W01[ (freq<bw[0])|(freq>bw[1]) ] = 0
