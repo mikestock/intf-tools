@@ -58,6 +58,8 @@ class MainTab(wx.Panel):
 		self.btnReadLma = wx.Button(self, label='Read LMA')
 		self.Bind(wx.EVT_BUTTON, self.OnBtnReadLma, self.btnReadLma)
 		
+		self.chkTime = wx.CheckBox(self, label='Time From Second')
+		self.Bind(wx.EVT_CHECKBOX, self.OnChkTime, self.chkTime)
 
 		####
 		# the only limit button, reset
@@ -110,7 +112,7 @@ class MainTab(wx.Panel):
 		
 		
 		
-		self.grid = wx.FlexGridSizer(rows=4,cols=2,hgap=5,vgap=5)
+		self.grid = wx.FlexGridSizer(rows=5,cols=2,hgap=5,vgap=5)
 		self.grid.Add(self.lblProjection,1,wx.LEFT)
 		self.grid.Add(self.cmbProjection,1,wx.RIGHT)
 		self.grid.Add(self.lblColor,1,wx.LEFT)
@@ -119,6 +121,8 @@ class MainTab(wx.Panel):
 		self.grid.Add(self.cmbAlpha,1,wx.RIGHT)
 		self.grid.Add(self.lblSize,1,wx.LEFT)
 		self.grid.Add(self.cmbSize,1,wx.RIGHT)
+		self.grid.AddStretchSpacer(1)
+		self.grid.Add(self.chkTime,1,wx.LEFT)
 
 		self.sizer = wx.BoxSizer(wx.VERTICAL)
 		self.sizer.AddSizer(self.topSizer,0,wx.RIGHT)
@@ -129,6 +133,18 @@ class MainTab(wx.Panel):
 		
 		self.SetSizer(self.sizer)
 		self.Fit()
+
+	###
+	#the checkbox
+	def OnChkTime(self,e):
+		if self.chkTime.GetValue():
+			print 'time from second'
+			self.root.plotPanel.data.time_from_second()
+			#change the title
+		else:
+			print 'time from trigger'
+			self.root.plotPanel.data.time_from_trigger()
+		self.root.plotPanel.mkPlot()
 
 	###
 	#the color comboboxes
@@ -623,7 +639,6 @@ class PlotPanel(wx.Panel):
 		self.span_ax3 = SpanSelector(self.ax3, self.OnSelectAx3, 'horizontal',\
 			rectprops=dict(facecolor=self.colorHL, alpha=0.25),useblit=True,minspan=0.01)
 
-		self.mkColorMap()
 		
 
 		########
@@ -633,6 +648,8 @@ class PlotPanel(wx.Panel):
 		#initialize all the ranges
 		self.data.reset_limits()
 		self.data.update()
+
+		self.mkColorMap()
 
 		print 'Making New Plot'
 		
@@ -1023,7 +1040,8 @@ class MainFrame(wx.Frame):
 		print 'reading data',inFileS
 		self.inFileS = inFileS
 		self.plotPanel.data = it.read_data_file(inFileS)
-		self.plotPanel.data.time_from_second()
+		if self.ctrlPanel.fileTab.chkTime.GetValue():
+			print 't_offset', self.plotPanel.data.time_from_second()
 		print 'making plot'
 		self.plotPanel.mkPlot()
 		#self.plotPanel.UpdatePlot()	

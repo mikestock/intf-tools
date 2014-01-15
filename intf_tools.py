@@ -47,7 +47,7 @@ NoiseSpectra= { 	(0,1):None,
 					3: None }
 
 #radius of the earth
-Re   = 6378100		    #meters
+Re   = 6371000		    #meters
 
 #this is the global settings class
 Settings   = None #to be initialized later
@@ -120,6 +120,23 @@ colorDict = {	'red': ( 	(0.00, 0.3, 0.3),
 							(1.00, 0.0, 0.0) ) }
 cmap_mjet   = colors.LinearSegmentedColormap('mjet',colorDict,256)
 
+colorDict = {	'red': ( 	(0.00, 0.0, 0.2),
+							(0.30, 1.0, 1.0),
+							(0.50, 1.0, 1.0),
+							(0.60, 0.0, 0.0),
+							(1.00, 0.0, 0.0) ),
+				'green':(	(0.00, 0.0, 0.0),
+							(0.30, 0.0, 0.0),
+							(0.40, 0.3, 0.3),
+							(0.50, 0.0, 0.0),
+							(0.60, 0.3, 0.3),
+							(1.00, 0.0, 0.0) ),
+				'blue':(	(0.00, 0.0, 0.0),
+							(0.40, 0.0, 0.0),
+							(0.50, 1.0, 1.0),
+							(0.70, 1.0, 1.0),
+							(1.00, 0.0, 0.2) ) }
+cmap_rb   = colors.LinearSegmentedColormap('rb',colorDict,256)
 
 #####
 # Classes
@@ -634,7 +651,7 @@ class LmaData():
 		self.cbRange = [-1.,1.]
 		self.xRange  = [-20,20]	#km
 		self.yRange	 = [-20,20]
-		self.zRange  = [3,20]
+		self.zRange  = [2.8,20]
 		self.ciRange = [0,100]	#chisq for lma data
 		
 		self._time = []
@@ -655,6 +672,8 @@ class LmaData():
 
 		lineS = f.readline().strip().split()
 		t0 = int(float(lineS[0]))
+		#t0 = 0
+		self.t0 = t0	#unlikely to be used
 		while lineS != []:
 			if len(lineS) == 7:
 				t    = float(lineS[0])
@@ -853,10 +872,10 @@ class ProcData():
 		self.caRange  = [-1.1,1.1]	#cosa
 		self.cbRange  = [-1.1,1.1]	#cosb
 		#quality
-		self.tCls     = 2.25
-		self.tStd     = 2.0
-		self.tXpk     = 0.3
-		self.tMlt     = 0.49
+		self.tCls     = 1.25
+		self.tStd     = 1.0
+		self.tXpk     = 0.7
+		self.tMlt     = 0.7
 
 		#find the index of various values
 		#if the header is proper, all these will be there
@@ -894,27 +913,48 @@ class ProcData():
 		#initialize the mask
 		
 		#make a hist of the rawData
-		self.rawDataHist = np.histogram2d( self.elev, 
+		self.rawDataHist = np.histogram2d( self.elev,
 										   self.time, 
 										   weights=self.pkpk, 
 										   bins=[self.nbins/2,self.nbins], 
 										   range=([0,90],[self.tStart,self.tStop]) )		
+	def time_from_trigger(self):
+		"""time_from_trigger(self)
+		adjusts the time array to count from the trigger time.  
+		This is useful is you are trying to identify a period of time 
+		to process, since intf_process counts from the trigger
+		"""
+		tOffset = 0
+		self.tRange[0] = self.tRange[0] - self.tOffset + tOffset
+		self.tRange[1] = self.tRange[1] - self.tOffset + tOffset
+		self.rawDataHist[2][:] += tOffset - self.tOffset		
+		self.tOffset   = tOffset
+		self.update()
+		return self.tOffset	#this is incase other programs code needs to track this
+		
 	
 	def time_from_second(self):
 		"""time_from_second(self)
 		adjusts the time array to count from the beginning of the second, 
-		or at least attempts to do that.  It is accurate to about 1 ms
+		or at least attempts to do that.  It is accurate to about 20 ms
 		"""
 		print self.tStart
 		try:
 			tStartOff = self.tStart-self.tStart%1000
+			print 'tStart', self.tStart, tStartOff
 			tOffset   = self.header.uSecond/1000-tStartOff
-			print 'found usecond data'
+			print 'found usecond data', self.header.uSecond
 		except:
 			tOffset = -self.tStart
 			print 'didn\'t find usecond data'
+		if self.tRange[0] - self.tOffset + tOffset > 1000:
+			tOffset -= 1000
 		self.tRange[0] = self.tRange[0] - self.tOffset + tOffset
 		self.tRange[1] = self.tRange[1] - self.tOffset + tOffset
+		print 'tb',self.rawDataHist[2][0]
+		self.rawDataHist[2][:] += tOffset - self.tOffset
+		print 'tb',self.rawDataHist[2][0]
+		
 		self.tOffset   = tOffset
 		self.update()
 		return self.tOffset	#this is incase other programs code needs to track this
@@ -993,6 +1033,7 @@ class ProcData():
 		
 		mask         = ((self.rawData[self.ieCls]/eCls)**2+(self.rawData[self.ieStd]/eStd)**2 <  1) &\
 					   ((self.rawData[self.ieXpk]/eXpk)**2+(self.rawData[self.ieMlt]/eMlt)**2 >  1)
+		#mask = mask & (self.rawData[self.ieMlt] < eMlt)
 		self.data = self.rawData[:,mask]
 
 		self.limits()
@@ -1299,13 +1340,13 @@ def calc_range_bearing(lat,lon,alt):
 	#distance
 	#d is along the earth
 	a = sin( (Settings.intfLoc[0]-lat)/2 )**2 + cos(Settings.intfLoc[0])*cos(lat)*sin( (Settings.intfLoc[1]-lon)/2 )**2
-	d = Re*2*arctan2( sqrt(a), sqrt(1-a) )
+	d = (Re)*2*arctan2( sqrt(a), sqrt(1-a) )
 
 	#print d, alt2, alt1
 	#elevation
 	El = arctan( abs(alt-Settings.intfLoc[2])/d )
 	#get the range
-	r  = d/cos(El)
+	r  = sqrt( d**2 + abs(alt-Settings.intfLoc[2])**2 )
 
 	#bearing
 	Az = arctan2( sin(lon-Settings.intfLoc[1])*cos(lat), cos(Settings.intfLoc[0])*sin(lat)-sin(Settings.intfLoc[0])*cos(lat)*cos(lon-Settings.intfLoc[1]) )
@@ -1448,30 +1489,32 @@ def filter( arr, f_nyq, bw, df=3 ):
 	---
 	out		- array"""
 	#df = 3	#this is how long it takes to go from low to high
-	f_min = 1e-4	#minimum of the filter
+	f_min = 0	#minimum of the filter
 	f0 = [ bw[0]-df, bw[0]+df ]
 	f1 = [ bw[1]-df, bw[1]+df ]
-	N = len(arr)
+	N = arr.shape[0]
 	
 	freq = abs( fft.fftfreq(2*N,1./f_nyq) )
 	#build the filter
-	W = zeros( 2*N )
+	W = zeros( (2*N, arr.shape[1]) )
 	
 	#the rise
 	mask =  (freq>=f0[0])&(freq<=f0[1])
-	W[mask] = 0.5*(1-cos( pi*(freq[mask]-f0[0])/(f0[1]-f0[0]) ))
+	for i in range(arr.shape[1]):
+		W[mask,i] = 0.5*(1-cos( pi*(freq[mask]-f0[0])/(f0[1]-f0[0]) ))
 	#the fall
 	mask =  (freq>=f1[0])&(freq<=f1[1])
-	W[mask] = 0.5*(1-cos( pi*(freq[mask]-f1[1])/(f1[1]-f1[0]) ))
+	for i in range(arr.shape[1]):
+		W[mask,i] = 0.5*(1-cos( pi*(freq[mask]-f1[1])/(f1[1]-f1[0]) ))
 	#the top
-	W[ (freq>f0[1])&(freq<f1[0]) ] = 1
+	W[ (freq>f0[1])&(freq<f1[0]),: ] = 1
 	#the bottom
 	W[ W<f_min ] = f_min
 	
 	#apply the fitler
-	out_i = fft.fft( arr, 2*N )
+	out_i = fft.fft( arr, 2*N, axis=0 )
 	out_i *= W
-	out_i = fft.ifft( out_i )
+	out_i = fft.ifft( out_i, axis=0 )
 	
 	return real( out_i[:N] )
 
@@ -1533,9 +1576,8 @@ def xcorr( d0, d1, P):
 	#invert
 	x01 = fft.fftshift( fft.ifft(x01) )[1:]
 	#normalize
-	x01 /= ifft(fft0*fft0.conj())[0]*ifft(fft1*fft1.conj())[0]
-	
-	
+	x01 /= sqrt( fft.ifft(fft0*fft0.conj())[0]*fft.ifft(fft1*fft1.conj())[0] )
+
 	return real(x01)
 
 def fwhm( x ):
@@ -1743,7 +1785,7 @@ def place_label(ax,s,ar=1,size=12,box=True,figSize=(6.5,4)):
 	axAsp = ax.get_data_ratio()
 	w = diff(axBox[:,0])[0]*figSize[0]
 	h = diff(axBox[:,1])[0]*figSize[1]*ar
-	print w,h
+	print 'w,h',w,h
 	bbox=mpl.patches.Rectangle( (0,1-(2*offset+texth)/h),
 			width=(2*offset+texth)/w,
 			height=(2*offset+texth)/h,

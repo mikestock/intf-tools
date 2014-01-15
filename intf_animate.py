@@ -136,7 +136,14 @@ colorDict = {	'red': ( 	(0.0, 0.3, 0.3),
 							(0.55, 0.0, 0.0),
 							(0.8, 0.0, 0.0),
 							(1.0, 0.0, 0.0) ) }
-gCmap   = colors.LinearSegmentedColormap('wjet',colorDict,256)
+#gCmap   = colors.LinearSegmentedColormap('wjet',colorDict,256)
+gCmap   = it.cmap_mjet
+
+#the gain
+AntennaGain = 33	#dB
+SquarePkpk  = False	#due to a bug in the processing code
+minPwr      = -90	#dBm
+maxPwr      = -40	#dBm
 
 
 #Set the Output Datafile
@@ -155,7 +162,8 @@ elif os.path.splitext(arguments.output_file)[1] != '.png':
 data = it.read_data_file(arguments.input_file)
 if arguments.slow:
 	slowTimes = loadtxt( arguments.slow, delimiter=',')
-
+#build the times from the beginning of the second
+print data.time_from_second()
 
 data.tCls = arguments.eCls
 data.tStd = arguments.eStd
@@ -211,10 +219,14 @@ elif arguments.color == 3:
 	#amplitude
 	print 'by Amplitude'
 	data.sort( data.pkpk )
-	aMin = np.log10( data.a05 )
-	aMax = np.log10( data.a95 )
-	c = np.log10(data.pkpk)
-	c = (c-aMin)/(aMax-aMin)
+	vpd = .5/2**15
+	if SquarePkpk:
+		intf_pkpwr = 10*log10( (data.pkpk**2/2/sqrt(2)*vpd)**2/50 )- AntennaGain +30
+	else:
+		intf_pkpwr = 10*log10( (data.pkpk/2/sqrt(2)*vpd)**2/50 )- AntennaGain +30
+	print 'pkpk',max(intf_pkpwr), min(intf_pkpwr)
+	c  = intf_pkpwr-minPwr
+	c /= (maxPwr-minPwr)
 	c[c<0] = 0
 	c[c>1] = 1
 	c = gCmap( c )
@@ -226,6 +238,15 @@ a /= float(max(a))
 print mean(a)
 c[:,3] = a**arguments.alphaEx
 pointSz = arguments.pointSz
+
+#determine HistMax
+aeHist = histogram2d( 	data.cosa,
+						data.cosb,
+						weights=data.pkpk, 
+						bins=[arguments.nbins*2,arguments.nbins*2], 
+						range=[data.caRange,data.cbRange] )
+aeHistMax = aeHist[0].max()
+
 
 #################
 # Make a single plot
@@ -274,9 +295,8 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 								bins=[nbins*2,nbins*2], 
 								range=[data.caRange,data.cbRange] )
 		#scale the histogram
-		aeHist[0][:] -= aeHist[0].min()
-		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**.3
+		#aeHist[0][:] -= aeHist[0].min()
+		aeHist[0][:] = (aeHist[0]/aeHistMax)**.3
 	else:
 		aeHist = histogram2d( 	data.elev[mask],
 								data.azim[mask],
@@ -284,16 +304,15 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 								bins=[nbins*2,nbins*2], 
 								range=[data.elRange,data.azRange] )
 		#scale the histogram
-		aeHist[0][:] -= aeHist[0].min()
-		if aeHist[0].max() > 0:
-			aeHist[0][:] = (aeHist[0]/aeHist[0].max())**.3
+		#aeHist[0][:] -= aeHist[0].min()
+		aeHist[0][:] = (aeHist[0]/aeHistMax)**.3
 	ax1 = fig.add_subplot(111,axisbg=face)
 
 	if arguments.cos:
 		ax1.plot(circX,circY,c=txtc,ls='-')
 		ax1.plot(circX*cos(30*pi/180),circY*cos(30*pi/180),c=txtc,ls=':')
 		ax1.plot(circX*cos(60*pi/180),circY*cos(60*pi/180),c=txtc,ls=':')
-	ax1.pcolormesh( aeHist[2], aeHist[1], aeHist[0], cmap=cmap)
+	ax1.pcolormesh( aeHist[2], aeHist[1], aeHist[0], cmap=cmap, vmax=1, vmin=0)
 	ax1.yaxis.set_tick_params(labelcolor=txtc)
 	ax1.yaxis.set_tick_params(color=txtc)
 	ax1.xaxis.set_tick_params(labelcolor=txtc)
@@ -546,7 +565,7 @@ while iT < data.tRange[1]:
 	
 	#edit the file name
 	outS = ''.join([
-		os.path.splitext( arguments.output_file )[0]+'_%06i'%((iT-tStart)*100),
+		os.path.splitext( arguments.output_file )[0]+'_%07i'%((iT-tStart)*1000),
 		os.path.splitext( arguments.output_file )[1] ])
 	print 'writing to %s'%outS
 	canvas = FigureCanvas(fig)
@@ -562,5 +581,5 @@ while iT < data.tRange[1]:
 	
 
 print "To animate into an AVI, use the following command"
-print "mencoder mf://%s -mf fps=25:type=png -ovc lavc -lavcopts vcodec=mpeg4 -oac copy -o output.avi -ffourcc DX50"%(os.path.splitext( arguments.output_file )[0]+'_??????.png')
+print "mencoder mf://%s -mf fps=25:type=png -ovc lavc -lavcopts vcodec=mpeg4:vbitrate=1000000 -oac copy -o output.avi -ffourcc DX50"%(os.path.splitext( arguments.output_file )[0]+'_???????.png')
 

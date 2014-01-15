@@ -89,6 +89,11 @@ def process_window(data,lastEvent,ants,Settings):
 	d1 = ( data[ants[1],:] - mean(data[ants[1],:]) )*Wt
 	d2 = ( data[ants[2],:] - mean(data[ants[2],:]) )*Wt	
 
+	if max(d0)-min(d0) == 0 or max(d1)-min(d1)==0 or max(d2)-min(d2)==0:
+		#this is a bad thing
+		print 'ERROR: 0 amplitude waveform encountered'
+		return None
+
 	#calculate the ffts
 	fft0 = fft.fft(d0,2*N)
 	fft1 = fft.fft(d1,2*N)
@@ -127,24 +132,26 @@ def process_window(data,lastEvent,ants,Settings):
 	d1 = real( fft.ifft( fft1*W ) )
 	d2 = real( fft.ifft( fft2*W ) )
 	#0 offset is index 0
-	eamp0 = sqrt( min( pkpk(d0),pkpk(d1),pkpk(d2) ) )
-	eamp1 = sqrt( min( rms(d0) ,rms(d1) ,rms(d2)  ) )
+	eamp0 = mean( [pkpk(d0),pkpk(d1),pkpk(d2)] )
+	eamp1 = mean( [rms(d0) ,rms(d1) ,rms(d2) ] )
 	
-	#calculate the color
-	cSig = 6.25	#standard deviation of the color filters
-	cRed = exp(-.5*( (freq-42.5)/cSig )**2)
-	cGrn = exp(-.5*( (freq-55.0)/cSig )**2)
-	cBlu = exp(-.5*( (freq-67.5)/cSig )**2)
-	#integrate
-	cRed = sqrt(sum(cRed*abs(fft0*W)**2))
-	cGrn = sqrt(sum(cGrn*abs(fft0*W)**2))
-	cBlu = sqrt(sum(cBlu*abs(fft0*W)**2))
-	#normalize
-	cMax = max(cRed,cGrn,cBlu)
-	cRed = int( cRed/cMax*255 )
-	cGrn = int( cGrn/cMax*255 )
-	cBlu = int( cBlu/cMax*255 )
-
+	try:
+		#calculate the color
+		cSig = 6.25	#standard deviation of the color filters
+		cRed = exp(-.5*( (freq-42.5)/cSig )**2)
+		cGrn = exp(-.5*( (freq-55.0)/cSig )**2)
+		cBlu = exp(-.5*( (freq-67.5)/cSig )**2)
+		#integrate
+		cRed = sqrt(sum(cRed*abs(fft0*W)**2))
+		cGrn = sqrt(sum(cGrn*abs(fft0*W)**2))
+		cBlu = sqrt(sum(cBlu*abs(fft0*W)**2))
+		#normalize
+		cMax = max(cRed,cGrn,cBlu)
+		cRed = int( cRed/cMax*255 )
+		cGrn = int( cGrn/cMax*255 )
+		cBlu = int( cBlu/cMax*255 )
+	except:
+		return None
 	
 	W0 = W.copy()	#used for a small number of calculations which require a simple windowing function
 	
@@ -267,7 +274,7 @@ def process_window(data,lastEvent,ants,Settings):
 	       real( fft.ifft( fft1*W01*fft1.conj() ) )
 	a02 =  real( fft.ifft( fft0*W02*fft0.conj() ) ) *\
 	       real( fft.ifft( fft2*W02*fft2.conj() ) )
-	
+		
 	#calculate the cross spectrum
 	x01 = W01 * fft0 * (fft1.conj())
 	x02 = W02 * fft0 * (fft2.conj())
@@ -413,18 +420,22 @@ def parse_args():
 	st.Settings.sampleRate  	  = st.Settings.header.sampleRate/1000000	#in samples/us
 	st.Settings.preTriggerSamples = st.Settings.header.preTriggerSamples
 	
+	#t0 = st.Settings.header.usecond/1000
+	t0 = -st.Settings.preTriggerSamples/st.Settings.sampleRate/1000
 	#deal with the start and stop samples, surprising complicated, this
 	if arguments.start == 0:
 		#that's the beginning of the file, easy
 		st.Settings.startSample = 0
 	else:
 		st.Settings.startSample = \
-			arguments.start*st.Settings.sampleRate*1000+st.Settings.preTriggerSamples
+			(arguments.start-t0)*st.Settings.sampleRate*1000
 	if arguments.stop == -1:	#process the whole file
 		st.Settings.stopSample = -1
 	else:
 		st.Settings.stopSample = \
-			arguments.stop*st.Settings.sampleRate*1000+st.Settings.preTriggerSamples
+			(arguments.stop-t0)*st.Settings.sampleRate*1000
+	print 'range', st.Settings.startSample, st.Settings.stopSample, arguments.start, arguments.stop
+	print 't0', t0
 
 
 	#Are we saving or loading the noise spectra?
