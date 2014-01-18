@@ -1056,6 +1056,10 @@ class ProcData():
 
 
 def read_raw_file_data(fileS = None, header=None, startSample = None, numSamples=None):
+	"""read_raw_file_data(fileS = None, header=None, startSample = None, numSamples=None):
+	Reads in the 4 channels of raw data, 
+	includes handling for different raw data versions
+	"""
 	#get the variables we need in the local namespace
 	if fileS == None:
 		fileS       = Settings.inFileS
@@ -1119,17 +1123,86 @@ def read_raw_file_data(fileS = None, header=None, startSample = None, numSamples
 			f.close()
 		except:
 			return None
-		#data = array( [
-		#	array( chA ).reshape(numSamples,1),
-		#	array( chB ).reshape(numSamples,1),
-		#	array( chC ).reshape(numSamples,1),
-		#	array( chD ).reshape(numSamples,1) ])
+
 		data = array( [
 			array( chA ),
 			array( chB ),
 			array( chC ),
 			array( chD ) ])
 	return data
+
+def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=50000.):
+	"""read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=10000):
+	reads in data from a single channel for use as plotting a waveform
+	
+	Only works for version 5 and above data
+	
+	maxSamples - 
+		If more than maxSamples data is requested, the waveform 
+		is decimated
+	"""
+	blockSize  = 512	#how many samples to read at a time
+	maxSamples = float(maxSamples)	#needs to be a float for later math
+	#get the variables we need in the local namespace
+	if fileS == None:
+		fileS       = Settings.inFileS
+	if header == None:
+		header      = Settings.header
+	if startSample == None:
+		startSample = Settings.startSample
+	if numSamples == None:
+		numSamples  = Settings.numSamples
+
+	#determine the decimation amount
+	decimation = 0
+	while decimation == 0:
+		if numSamples > maxSamples:
+			decimation = int( maxSamples*blockSize/numSamples )
+		else:
+			decimation = blockSize
+		if decimation == 0:
+			blockSize *=2
+
+	wave = []
+	time = []
+	#version 5 and above data, split into files
+	if header.version >= 5 and header.version <= 12:
+		iSample = startSample
+		#how many samples/block should we keep
+		iTime = arange(blockSize)
+		if not os.path.exists(fileS):
+			return None
+		while iSample < startSample + numSamples:		
+			try:
+				startLoc  = int(iSample*2)
+				#channel whatever we're on
+				f = open( fileS,'r')
+				f.seek(startLoc+header.size)
+				chunk = struct.unpack( '%iH'%blockSize, f.read(blockSize*2) )
+				f.close()
+			except:
+				#hit end of file
+				break
+			chunk = array(chunk)
+			#calculate the decimation mask
+			mask  = (abs(chunk-mean(chunk))).argsort()[-decimation:]
+			mask.sort()
+			#append to the previous data
+			wave  += chunk[mask].tolist()
+			time  += (iTime[mask]+iSample).tolist()
+			
+			#increment counter
+			iSample += blockSize
+	else:
+		return None
+	#truncate
+	output = array( [time,wave],dtype='float' )
+	print output.shape, decimation
+	output = output[ :, output[0,:]<= startSample+numSamples ]
+	#convert time to ms
+	#(iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
+	output[0,:] = (output[0,:]-header.preTriggerSamples)*1000./header.sampleRate
+	return  output
 
 def write_hdf5_file(data, outFileS):
 	import h5py

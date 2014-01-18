@@ -57,6 +57,8 @@ class MainTab(wx.Panel):
 
 		self.btnReadLma = wx.Button(self, label='Read LMA')
 		self.Bind(wx.EVT_BUTTON, self.OnBtnReadLma, self.btnReadLma)
+		self.btnReadWave = wx.Button(self, label='Read Wave')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnReadWave, self.btnReadWave)
 		
 		self.chkTime = wx.CheckBox(self, label='Time From Second')
 		self.Bind(wx.EVT_CHECKBOX, self.OnChkTime, self.chkTime)
@@ -103,12 +105,16 @@ class MainTab(wx.Panel):
 		self.topSizer.Add(self.btnReset,0,wx.RIGHT)
 		
 		
-		self.btmSizer = wx.BoxSizer(wx.HORIZONTAL)
-		self.btmSizer.Add(self.btnPrev,0,wx.RIGHT|wx.BOTTOM)
-		self.btmSizer.AddStretchSpacer(1)
-		self.btmSizer.Add(self.btnNext,0,wx.RIGHT|wx.BOTTOM)
-		self.btmSizer.AddStretchSpacer(1)
-		self.btmSizer.Add(self.btnReadLma,0,wx.RIGHT|wx.BOTTOM)
+		self.btmSizer1 = wx.BoxSizer(wx.HORIZONTAL)
+		self.btmSizer1.Add(self.btnPrev,0,wx.RIGHT|wx.BOTTOM)
+		self.btmSizer1.AddStretchSpacer(1)
+		self.btmSizer1.Add(self.btnNext,0,wx.RIGHT|wx.BOTTOM)
+		
+		self.btmSizer2 = wx.BoxSizer(wx.HORIZONTAL)
+		self.btmSizer2.Add(self.btnReadLma,0,wx.RIGHT|wx.BOTTOM)
+		self.btmSizer2.AddStretchSpacer(1)
+		self.btmSizer2.Add(self.btnReadWave,0,wx.RIGHT|wx.BOTTOM)
+		
 		
 		
 		
@@ -129,7 +135,8 @@ class MainTab(wx.Panel):
 		self.sizer.AddStretchSpacer(1)
 		self.sizer.AddSizer(self.grid,0,wx.RIGHT)
 		self.sizer.AddStretchSpacer(1)
-		self.sizer.AddSizer(self.btmSizer,0,wx.RIGHT)
+		self.sizer.AddSizer(self.btmSizer2,0,wx.RIGHT)
+		self.sizer.AddSizer(self.btmSizer1,0,wx.RIGHT)
 		
 		self.SetSizer(self.sizer)
 		self.Fit()
@@ -183,6 +190,13 @@ class MainTab(wx.Panel):
 			inFileS = dlg.GetPath()
 		dlg.Destroy()
 		self.root.OpenLma(inFileS)
+	def OnBtnReadWave(self,e):
+		"""File Selector Dialog to open a data file"""
+		dlg = wx.FileDialog(self, "Choose a File", "","", "*.*", wx.FD_OPEN)
+		if dlg.ShowModal() == wx.ID_OK:
+			inFileS = dlg.GetPath()
+		dlg.Destroy()
+		self.root.OpenWave(inFileS)
 		
 	
 	def OnBtnSave(self,e):
@@ -546,6 +560,8 @@ class PlotPanel(wx.Panel):
 		self.inFileS = None
 		self.data    = None
 		self.lma     = None
+		self.waveHead= None
+		self.waveData= None
 		#self.mskData = None
 		self.face    = 'w'
 		self.txtc    = 'k'
@@ -603,6 +619,7 @@ class PlotPanel(wx.Panel):
 		self.ax3Coll = None
 		self.ax1Lma  = None
 		self.ax3Lma  = None
+		self.ax3Wave = None
 		
 		gs = gridspec.GridSpec(2, 2)
 
@@ -966,7 +983,38 @@ class PlotPanel(wx.Panel):
 			self.ax3Coll.remove()
 		if self.ax3Lma != None:
 			self.ax3Lma.remove()
-		
+		if self.ax3Wave != None:
+			self.ax3Wave.remove()
+
+
+		if self.waveHead != None:
+			#get the start sample, surprisingly difficult this
+			#t = (iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
+			#t*sRage*1000+preTrig = iMax
+			sRate = self.data.header.SampleRate
+			pSamp = self.data.header.PreTriggerSamples
+			sSam = int( (self.data.tRange[0]-self.data.tOffset)*sRate/1000+pSamp )
+			#get the number of samples, not so hard
+			numSam = int( (self.data.tRange[1]-self.data.tRange[0])/1000.*sRate )
+			print sSam, numSam, self.data.sSam[0], self.data.sSam[-1]-self.data.sSam[0]
+			#read in wave data and plot it under
+			self.waveData = it.read_raw_waveform_file_data( self.root.waveFile, 
+						self.waveHead,
+						sSam, 
+						numSam )
+			#normalize the wavedata
+			self.waveData[1,:] -= min( self.waveData[1,:] )
+			self.waveData[1,:] /= max( self.waveData[1,:] )
+			self.waveData[1,:] *= self.data.elRange[1]-self.data.elRange[0]
+			self.waveData[1,:] += self.data.elRange[0]
+			self.waveData[0,:] += self.data.tOffset
+			print self.waveData[0,0], self.waveData[0,-1], self.data.tRange
+			#plot the data
+			self.ax3Wave, = self.ax3.plot( 
+						self.waveData[0,:], 
+						self.waveData[1,:], 
+						'k-',zorder=-10 )
+			
 		self.ax3Coll = self.ax3.scatter( 
 						  self.data.time,
 						  self.data.elev,
@@ -1024,7 +1072,9 @@ class MainFrame(wx.Frame):
 		wx.Frame.__init__(self,None,-1, 'INTF Plot',size=(550,350))
 		
 		#the only paramenters stored in the frame are about the file
-		self.inFileS = None
+		self.inFileS   = None
+		self.waveFileS = None
+		self.lmaFileS  = None
 		
 		#these are the main 2 panels
 		self.plotPanel    = PlotPanel(self,self)	#self is the parent and root
@@ -1038,7 +1088,9 @@ class MainFrame(wx.Frame):
 
 	def OpenFile(self,inFileS):
 		print 'reading data',inFileS
-		self.inFileS = inFileS
+		self.inFileS   = inFileS
+		self.lmaFileS  = None
+		self.waveFileS = None
 		self.plotPanel.data = it.read_data_file(inFileS)
 		if self.ctrlPanel.fileTab.chkTime.GetValue():
 			print 't_offset', self.plotPanel.data.time_from_second()
@@ -1049,6 +1101,14 @@ class MainFrame(wx.Frame):
 	def OpenLma(self,inFileS):
 		self.lmaFile = inFileS
 		self.plotPanel.lma  = it.LmaData(inFileS)
+		self.plotPanel.UpdatePlot()
+	
+	def OpenWave(self,inFileS):
+		self.waveFile = inFileS
+		try:
+			self.plotPanel.waveHead = it.RawHeader(inFileS)
+		except:
+			self.plotPanel.waveHead = None
 		self.plotPanel.UpdatePlot()
 
 

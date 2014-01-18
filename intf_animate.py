@@ -141,7 +141,7 @@ gCmap   = it.cmap_mjet
 
 #the gain
 AntennaGain = 33	#dB
-SquarePkpk  = False	#due to a bug in the processing code
+SquarePkpk  = True	#due to a bug in the processing code
 minPwr      = -90	#dBm
 maxPwr      = -40	#dBm
 
