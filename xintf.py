@@ -270,6 +270,9 @@ class FilterTab(wx.Panel):
 		btnLimits   = wx.Button(self, label = 'Set Limits')
 		self.Bind(wx.EVT_BUTTON, self.OnBtnLimits, btnLimits)
 		
+		btnLimBack   = wx.Button(self, label = 'Back')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnLimBack, btnLimBack)
+		
 		lbltRange   = wx.StaticText(self, label='  Time')
 		self.boxtRange0  = wx.TextCtrl(self,wx.TE_RIGHT,size=boxSize)
 		self.boxtRange1  = wx.TextCtrl(self,wx.TE_RIGHT,size=boxSize)
@@ -409,6 +412,22 @@ class FilterTab(wx.Panel):
 
 	###
 	# Limits
+	def OnBtnLimBack(self,e):
+		#this goes back in the history
+		
+		#pop off the last set of limits
+		if len( self.root.plotPanel.limitsHistory ) > 0:
+			lims = self.root.plotPanel.limitsHistory.pop()
+		else:
+			return
+		
+		#set these limits
+		self.root.plotPanel.SetLimits(save=False, **lims)
+		
+		#update the plot
+		self.root.plotPanel.UpdatePlot()
+
+	
 	def OnBtnLimits(self,e):
 		#this is ugly, I'm sure there's a better way to do it, but 
 		#this should work
@@ -476,11 +495,10 @@ class FilterTab(wx.Panel):
 			cbRange.append(F)
 
 		#set the limits
-		self.root.plotPanel.data.tRange  =  tRange
-		self.root.plotPanel.data.azRange = azRange
-		self.root.plotPanel.data.elRange = elRange
-		self.root.plotPanel.data.caRange = caRange
-		self.root.plotPanel.data.cbRange = cbRange
+		self.root.plotPanel.SetLimits( 
+			caRange=caRange, cbRange=cbRange, 
+			elRange=elRange, azRange=azRange, 
+			tRange=tRange)
 
 		#make the changes and update the text values
 		self.set_values()
@@ -584,6 +602,8 @@ class PlotPanel(wx.Panel):
 		self._draw_pending = False
 		self._draw_counter = 0
 		
+		self.limitsHistory = []
+		
 
 		self.SetBackgroundColour(wx.NamedColour("WHITE"))
 
@@ -621,6 +641,7 @@ class PlotPanel(wx.Panel):
 		self.ax3Lma  = None
 		self.ax3Wave = None
 		
+		self.limitsHistory = [ ]
 		gs = gridspec.GridSpec(2, 2)
 
 		#axis #1, the Az-El (or cosa-cosb) plot
@@ -845,14 +866,10 @@ class PlotPanel(wx.Panel):
 		ylims = [click.ydata, release.ydata]
 		ylims.sort()
 		
-		if self.data == None:
-			return
 		if self.cosine:
-			self.data.caRange = ylims
-			self.data.cbRange = xlims
+			self.SetLimits(caRange=ylims, cbRange=xlims)
 		else:
-			self.data.elRange = ylims
-			self.data.azRange = xlims
+			self.SetLimits(elRange=ylims, azRange=xlims)
 
 		#update the plots
 		self.UpdatePlot()
@@ -861,7 +878,7 @@ class PlotPanel(wx.Panel):
 		self.figure_canvas.draw()
 		if self.data == None:
 			return
-		self.data.tRange = [xmin,xmax]
+		self.SetLimits(tRange=[xmin,xmax])
 		
 		#update the mask and plot
 		self.UpdatePlot()
@@ -870,7 +887,7 @@ class PlotPanel(wx.Panel):
 		#mask the data array
 		if self.data == None:
 			return
-		self.data.tRange = [xmin,xmax]
+		self.SetLimits(tRange=[xmin,xmax])
 		
 		#update the mask and plot
 		self.UpdatePlot()
@@ -915,6 +932,49 @@ class PlotPanel(wx.Panel):
 			#~ (self.data.cosa>=self.caRange[0])&(self.data.cosa<=self.caRange[1])&
 			#~ (self.data.cosb>=self.cbRange[0])&(self.data.cosb<=self.cbRange[1]) )[0]
 
+	def GetLimits(self):
+		if self.data == None:
+			#no nothing
+			return
+		
+		#the limits get stored in a dictionary
+		lims = {}
+		lims['caRange'] = self.data.caRange
+		lims['cbRange'] = self.data.cbRange
+		lims['elRange'] = self.data.elRange
+		lims['azRange'] = self.data.azRange
+		lims['tRange']  = self.data.tRange
+		
+		return lims
+
+	def SetLimits(self, caRange=None, cbRange=None, 
+		elRange=None, azRange=None, tRange=None, save=True ):
+		
+		if self.data == None:
+			#Do Nothing
+			return
+		
+		#append the old limits to the history
+		if self.limitsHistory != None and save:
+			self.limitsHistory.append(self.GetLimits())
+
+		#the limits that aren't passed aren't changed, 
+		#get them from the data and store in history
+		lims = {}
+		if caRange != None:
+			self.data.caRange=caRange
+
+		if cbRange != None:
+			self.data.cbRange=cbRange
+
+		if elRange != None:
+			self.data.elRange=elRange
+
+		if azRange != None:
+			self.data.azRange=azRange
+		
+		if tRange != None:
+			self.data.tRange=tRange
 
 	def UpdatePlot(self):
 		"""redraws the main axis"""
