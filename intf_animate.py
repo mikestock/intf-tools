@@ -51,7 +51,7 @@ parser.add_argument('-p','--stop',default=-1,type=float,
 	help='Stop position in ms from the beginning of the file')
 
 #Color Options
-parser.add_argument('-c','--color',  default=None,type=int,
+parser.add_argument('-c','--color',  default=0,type=int,
 	help='Flag for plotting time in color, instead of bw')
 parser.add_argument('-a','--alpha',default=None,type=int,
 	help='Which column to use for the transparancy (3,4,5)')
@@ -99,9 +99,10 @@ parser.add_argument('-S', '--pointSz',   default=7.,type=float,
 	help='Size of the scatter points' )
 parser.add_argument('--notime', default=False, action='store_true',
 	help='Plots only the left panel, no elevation vs. time')
-	
-
-	
+parser.add_argument('--fancy', default=False, action='store_true',
+	help='Turns of TeX rendering')
+parser.add_argument('--trigtime', default=None, type=str,
+	help='Set the time of the trigger manually')
 	
 #Quality Arguments
 parser.add_argument('--eCls',default=1.6,type=float,
@@ -113,10 +114,13 @@ parser.add_argument('--eXpk',default=0.5,type=float,
 parser.add_argument('--eMlt',default=0.6,type=float,
 	help='Multiplicity Error Parameter')
 	
-parser.add_argument('-q','--qualcolumn',default=6,type=int,
-	help='Which column to use for the quality (3,4,5)')
 
 arguments = parser.parse_args(sys.argv[1:])
+
+if arguments.fancy:
+	rc('font',**{'family':'serif','serif':['Palatino'],'size':10})
+	rc('text', usetex=True)
+
 
 colorDict = {	'red': ( 	(0.0, 0.3, 0.3),
 							(0.1, 0.0, 0.0),
@@ -141,7 +145,7 @@ gCmap   = it.cmap_mjet
 
 #the gain
 AntennaGain = 33	#dB
-SquarePkpk  = True	#due to a bug in the processing code
+SquarePkpk  = False	#due to a bug in the processing code
 minPwr      = -90	#dBm
 maxPwr      = -40	#dBm
 
@@ -306,7 +310,7 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 		#scale the histogram
 		#aeHist[0][:] -= aeHist[0].min()
 		aeHist[0][:] = (aeHist[0]/aeHistMax)**.3
-	ax1 = fig.add_subplot(111,axisbg=face)
+	ax1 = fig.add_subplot(111,axisbg=face, aspect='equal')
 
 	if arguments.cos:
 		ax1.plot(circX,circY,c=txtc,ls='-')
@@ -321,8 +325,12 @@ def bgPlot_notime(data,iT,black, tStep, bgHist, titleS=None ):
 		ax1.set_xlim( data.cbRange )
 		ax1.set_ylim( data.caRange )
 		ax1.set_aspect('equal')
-		ax1.set_xlabel('cos(alpha)', color=txtc)
-		ax1.set_ylabel('cos(beta)', color=txtc)
+		if arguments.fancy:
+			ax1.set_ylabel('$\\cos(\\beta)$', color=txtc)
+			ax1.set_xlabel('$\\cos(\\alpha)$', color=txtc)
+		else:
+			ax1.set_ylabel('cos(beta)', color=txtc)
+			ax1.set_xlabel('cos(alpha)', color=txtc)
 	else:
 		ax1.set_xlim( data.azRange )
 		ax1.set_ylim( data.elRange )
@@ -405,8 +413,13 @@ def bgPlot( data,iT,black, tStep, bgHist, titleS=None ):
 		ax1.set_xlim( data.cbRange )
 		ax1.set_ylim( data.caRange )
 		ax1.set_aspect('equal')
-		ax1.set_xlabel('cos(alpha)', color=txtc)
-		ax1.set_ylabel('cos(beta)', color=txtc)
+		if arguments.fancy:
+			ax1.set_ylabel('$\\cos(\\beta)$', color=txtc)
+			ax1.set_xlabel('$\\cos(\\alpha)$', color=txtc)
+		else:
+			ax1.set_ylabel('cos(beta)', color=txtc)
+			ax1.set_xlabel('cos(alpha)', color=txtc)
+
 	else:
 		ax1.set_xlim( data.azRange )
 		ax1.set_ylim( data.elRange )
@@ -461,7 +474,10 @@ def ckSlow( iT ):
 			return slowTime[0]
 	return False
 
-timeS = data.TriggerTimeS
+if arguments.trigtime != None:
+	timeS = arguments.trigtime
+else:
+	timeS = data.TriggerTimeS
 fpsL = 1./arguments.animate[0]*1e3
 fpsH = 1./arguments.animate[1]*1e3
 
