@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import matplotlib
 matplotlib.use('WXAgg')
 
@@ -55,11 +57,8 @@ class MainTab(wx.Panel):
 		self.btnPrev = wx.Button(self, label='Previous')
 		self.Bind(wx.EVT_BUTTON, self.OnBtnPrev, self.btnPrev)
 
-		self.btnReadLma = wx.Button(self, label='Read LMA')
-		self.Bind(wx.EVT_BUTTON, self.OnBtnReadLma, self.btnReadLma)
-		self.btnReadWave = wx.Button(self, label='Read Wave')
-		self.Bind(wx.EVT_BUTTON, self.OnBtnReadWave, self.btnReadWave)
-		
+		###
+		# Check box for the time mode
 		self.chkTime = wx.CheckBox(self, label='Time From Second')
 		self.Bind(wx.EVT_CHECKBOX, self.OnChkTime, self.chkTime)
 
@@ -110,10 +109,6 @@ class MainTab(wx.Panel):
 		self.btmSizer1.AddStretchSpacer(1)
 		self.btmSizer1.Add(self.btnNext,0,wx.RIGHT|wx.BOTTOM)
 		
-		self.btmSizer2 = wx.BoxSizer(wx.HORIZONTAL)
-		self.btmSizer2.Add(self.btnReadLma,0,wx.RIGHT|wx.BOTTOM)
-		self.btmSizer2.AddStretchSpacer(1)
-		self.btmSizer2.Add(self.btnReadWave,0,wx.RIGHT|wx.BOTTOM)
 		
 		
 		
@@ -135,7 +130,6 @@ class MainTab(wx.Panel):
 		self.sizer.AddStretchSpacer(1)
 		self.sizer.AddSizer(self.grid,0,wx.RIGHT)
 		self.sizer.AddStretchSpacer(1)
-		self.sizer.AddSizer(self.btmSizer2,0,wx.RIGHT)
 		self.sizer.AddSizer(self.btmSizer1,0,wx.RIGHT)
 		
 		self.SetSizer(self.sizer)
@@ -146,12 +140,16 @@ class MainTab(wx.Panel):
 	def OnChkTime(self,e):
 		if self.chkTime.GetValue():
 			print 'time from second'
-			self.root.plotPanel.data.time_from_second()
+			offset = self.root.plotPanel.data.time_from_second()
 			#change the title
 		else:
 			print 'time from trigger'
-			self.root.plotPanel.data.time_from_trigger()
-		self.root.plotPanel.mkPlot()
+			offset = self.root.plotPanel.data.time_from_trigger()
+		
+		#update the limits history
+		self.root.plotPanel.OffsetLimits(offset)
+		
+		self.root.plotPanel.UpdatePlot(update_overview=True)
 
 	###
 	#the color comboboxes
@@ -183,22 +181,6 @@ class MainTab(wx.Panel):
 		
 	###
 	#file operations
-	def OnBtnReadLma(self,e):
-		"""File Selector Dialog to open a data file"""
-		dlg = wx.FileDialog(self, "Choose a File", "","", "*.*", wx.FD_OPEN)
-		if dlg.ShowModal() == wx.ID_OK:
-			inFileS = dlg.GetPath()
-		dlg.Destroy()
-		self.root.OpenLma(inFileS)
-	def OnBtnReadWave(self,e):
-		"""File Selector Dialog to open a data file"""
-		dlg = wx.FileDialog(self, "Choose a File", "","", "*.*", wx.FD_OPEN)
-		if dlg.ShowModal() == wx.ID_OK:
-			inFileS = dlg.GetPath()
-		dlg.Destroy()
-		self.root.OpenWave(inFileS)
-		
-	
 	def OnBtnSave(self,e):
 		defaultFileS = os.path.splitext( self.parent.parent.inFileS )[0] + '.png'
 		saveFileS = None
@@ -252,6 +234,185 @@ class MainTab(wx.Panel):
 
 	def OnBtnReset(self,e):
 		self.root.plotPanel.mkPlot()
+
+class OverlayTab(wx.Panel):
+	def __init__(self, parent,root):
+		wx.Panel.__init__(self, parent=parent, id=wx.ID_ANY)
+		self.parent = parent
+		self.root   = root
+		
+		self.font       = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False)
+		self.limitsLen  = 11
+		self.filtersLen = 9
+
+		boxSize = (50,30)
+		uSecBoxSize = (100,30)
+
+		#Waveforms
+		self.btnReadWave = wx.Button(self, label='Open Wave')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnReadWave, self.btnReadWave)
+
+		self.cmbColorWave = wx.ComboBox(self, 
+			choices=['Black','Red','Blue','Green'],
+			value='Black', style=wx.CB_READONLY )
+		self.lblWaveColor = wx.StaticText(self, label='  Color ')
+		self.Bind(wx.EVT_COMBOBOX,self.OnCmbColorWave,self.cmbColorWave)
+		waveColorSz = wx.BoxSizer(wx.HORIZONTAL)
+		waveColorSz.Add(self.lblWaveColor,0,wx.RIGHT|wx.BOTTOM)
+		waveColorSz.AddStretchSpacer(1)
+		waveColorSz.Add(self.cmbColorWave,0,wx.RIGHT|wx.BOTTOM)
+
+		self.lblWaveLpf1 = wx.StaticText(self, label='  LPF ')
+		self.lblWaveLpf2 = wx.StaticText(self, label='MHz   ')
+		self.boxWaveLpf   = wx.TextCtrl(self,wx.TE_RIGHT,size=boxSize)
+		self.btnLpfSet    = wx.Button(self, label='Set')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnLpfSet, self.btnLpfSet)
+		waveLpfSz = wx.BoxSizer(wx.HORIZONTAL)
+		waveLpfSz.Add(self.lblWaveLpf1,0,wx.RIGHT|wx.BOTTOM)
+		waveLpfSz.AddStretchSpacer(1)
+		waveLpfSz.Add(self.boxWaveLpf,0,wx.RIGHT|wx.BOTTOM)
+		waveLpfSz.Add(self.lblWaveLpf2,0,wx.LEFT|wx.BOTTOM)
+		waveLpfSz.AddStretchSpacer(1)
+		waveLpfSz.Add(self.btnLpfSet)
+		
+
+		#LMA
+		self.btnReadLma = wx.Button(self, label='Open LMA')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnReadLma, self.btnReadLma)
+
+		self.cmbColorLma = wx.ComboBox(self, 
+			choices=['Black','Red','Blue','Green'],
+			value='Black', style=wx.CB_READONLY )
+		self.lblLmaColor = wx.StaticText(self, label='  Color ')
+		self.Bind(wx.EVT_COMBOBOX,self.OnCmbColorLma,self.cmbColorLma)
+		lmaColorSz = wx.BoxSizer(wx.HORIZONTAL)
+		lmaColorSz.Add(self.lblLmaColor,0,wx.RIGHT|wx.BOTTOM)
+		lmaColorSz.AddStretchSpacer(1)
+		lmaColorSz.Add(self.cmbColorLma,0,wx.RIGHT|wx.BOTTOM)
+
+
+		#Timing offset (for use with LMA)
+		self.boxUSec = wx.TextCtrl(self,wx.TE_RIGHT,size=uSecBoxSize)
+		self.btnUSec = wx.Button(self, label='Set uSecond')
+		self.Bind(wx.EVT_BUTTON, self.OnBtnUSec, self.btnUSec)
+		uSecSz = wx.BoxSizer(wx.HORIZONTAL)
+		uSecSz.Add(self.boxUSec, 0,wx.RIGHT|wx.BOTTOM)
+		uSecSz.AddStretchSpacer(1)
+		uSecSz.Add(self.btnUSec, 0,wx.RIGHT|wx.BOTTOM)
+
+
+		#~ self.btmSizer2 = wx.BoxSizer(wx.HORIZONTAL)
+		#~ self.btmSizer2.Add(self.btnReadLma,0,wx.RIGHT|wx.BOTTOM)
+		#~ self.btmSizer2.AddStretchSpacer(1)
+		#~ self.btmSizer2.Add(self.btnReadWave,0,wx.RIGHT|wx.BOTTOM)
+
+		self.sizer = wx.BoxSizer(wx.VERTICAL)
+		self.sizer.Add(self.btnReadLma,0,wx.RIGHT|wx.BOTTOM)
+		self.sizer.Add(lmaColorSz,0,wx.RIGHT|wx.BOTTOM)
+		self.sizer.Add(self.btnReadWave,0,wx.RIGHT|wx.BOTTOM)
+		self.sizer.Add(waveColorSz,0,wx.RIGHT|wx.BOTTOM)
+		self.sizer.Add(waveLpfSz,0,wx.RIGHT|wx.BOTTOM)
+		self.sizer.Add(uSecSz)
+
+		self.SetSizer(self.sizer)
+		self.Fit()
+
+	#file operations
+	def OnBtnReadWave(self,e):
+		"""File Selector Dialog to open a data file"""
+		dlg = wx.FileDialog(self, "Choose a File", "","", "*.*", wx.FD_OPEN)
+		if dlg.ShowModal() == wx.ID_OK:
+			inFileS = dlg.GetPath()
+		dlg.Destroy()
+		self.root.OpenWave(inFileS)
+		if self.root.plotPanel.waveLpf == None:
+			self.boxWaveLpf.SetValue(' None')
+		else:
+			self.boxWaveLpf.SetValue(('%0.1f'%self.root.plotPanel.waveLpf).rjust(5))
+		
+	def OnBtnReadLma(self,e):
+		"""File Selector Dialog to open a data file"""
+		dlg = wx.FileDialog(self, "Choose a File", "","", "*.*", wx.FD_OPEN)
+		if dlg.ShowModal() == wx.ID_OK:
+			inFileS = dlg.GetPath()
+		dlg.Destroy()
+		self.root.OpenLma(inFileS)
+
+	#usecond
+	def OnBtnUSec(self,e):
+		
+		#get the string in the text box
+		S = self.boxUSec.GetValue().strip()
+		uSec = self.text_parser(S)
+		
+		#if needed, set time from trigger
+		if self.root.ctrlPanel.fileTab.chkTime.GetValue():
+			print 'time from trigger'
+			self.root.plotPanel.data.time_from_trigger()
+
+		if uSec == None:
+			print 'no uSecond, geting value'
+			#then we get the uSecond from the header
+			uSec = self.root.plotPanel.data.header.uSecond
+		else:
+			print 'Setting uSecond Value'
+			self.root.plotPanel.data.header.uSecond = uSec
+
+		#change to time from second
+		self.root.ctrlPanel.fileTab.chkTime.SetValue(True)
+		print 'time from second'
+		offset = self.root.plotPanel.data.time_from_second()
+		print offset
+	
+		#update plots
+		self.root.plotPanel.OffsetLimits(offset)
+		self.root.plotPanel.UpdatePlot(update_overview=True)
+	
+		#finally, set the textbox
+		self.boxUSec.SetValue(('%0.3f'%uSec).rjust(10))
+			
+
+	#colors
+	def OnCmbColorWave(self,e):
+		i = e.GetString()
+		print 'changing Waveform color option to %s'%i
+		self.root.plotPanel.waveColor = i
+		self.root.plotPanel.UpdatePlot()	
+
+	def OnCmbColorLma(self,e):
+		i = e.GetString()
+		print 'changing LMA color option to %s'%i
+		self.root.plotPanel.lmaColor = i
+		self.root.plotPanel.UpdatePlot()	
+	
+	#filters
+	def OnBtnLpfSet(self,e):
+		if self.root.waveFileS == None:
+			return
+		S = self.boxWaveLpf.GetValue().strip()
+
+		F = self.text_parser(S)
+		self.root.plotPanel.waveLpf = F
+		#update the value
+		if self.root.plotPanel.waveLpf == None:
+			self.boxWaveLpf.SetValue(' None')
+		else:
+			self.boxWaveLpf.SetValue(('%0.1f'%self.root.plotPanel.waveLpf).rjust(5))
+		
+		print 'changing Waveform LPF to %s'%repr(F)
+		#update the plot
+		self.root.plotPanel.waveData = None	#needed to force it to reload the data
+		self.root.plotPanel.UpdatePlot()
+
+	def text_parser(self,S):
+		#first see if it's a number
+		try:
+			F = float(S.strip())
+		except:
+			return None
+		return F		
+		
+
 
 class FilterTab(wx.Panel):
 	def __init__(self, parent,root):
@@ -564,7 +725,11 @@ class CtrlPanel(wx.Notebook):
 		self.AddPage(self.fileTab, "Main")
 
 		self.filtTab = FilterTab(self,self.root)
-		self.AddPage(self.filtTab, "Limit")
+		self.AddPage(self.filtTab, "Limits")
+		
+		self.overlayTab= OverlayTab(self,self.root)
+		self.AddPage(self.overlayTab, "Overlay")
+		
 		
 class PlotPanel(wx.Panel):
 	"""Plot Panel
@@ -577,9 +742,14 @@ class PlotPanel(wx.Panel):
 		#important paramenters
 		self.inFileS = None
 		self.data    = None
+		#lma
 		self.lma     = None
+		self.lmaColor= 'Black'
+		#waveforms
 		self.waveHead= None
 		self.waveData= None
+		self.waveLpf = 5	#waveform low pass filter
+		self.waveColor= 'Black'
 		#self.mskData = None
 		self.face    = 'w'
 		self.txtc    = 'k'
@@ -602,6 +772,7 @@ class PlotPanel(wx.Panel):
 		self._draw_pending = False
 		self._draw_counter = 0
 		
+		self.tOffset = 0
 		self.limitsHistory = []
 		
 
@@ -631,7 +802,7 @@ class PlotPanel(wx.Panel):
 	###
 	# Makers
 
-	def mkPlot(self):
+	def mkPlot(self, lims=None):
 		#clear the figure
 		self.figure.clf()
 		self.ax1Coll = None
@@ -640,8 +811,16 @@ class PlotPanel(wx.Panel):
 		self.ax1Lma  = None
 		self.ax3Lma  = None
 		self.ax3Wave = None
-		
+		#clear the history
 		self.limitsHistory = [ ]
+		
+		#clear the lma and wave data
+		self.lma     = None
+		#waveforms
+		self.waveHead= None
+		self.waveData= None
+		
+		#initialize the plot region		
 		gs = gridspec.GridSpec(2, 2)
 
 		#axis #1, the Az-El (or cosa-cosb) plot
@@ -710,8 +889,8 @@ class PlotPanel(wx.Panel):
 			self.ax1.plot(np.cos(30*np.pi/180)*X,np.cos(30*np.pi/180)*Y,'k--', linewidth=2)
 			self.ax1.plot(np.cos(60*np.pi/180)*X,np.cos(60*np.pi/180)*Y,'k--', linewidth=2)
 
-			self.ax1.set_ylabel('cosb')
-			self.ax1.set_xlabel('cosa')
+			self.ax1.set_xlabel('cos($\\alpha$)')
+			self.ax1.set_ylabel('cos($\\beta$)')
 			self.ax1.set_xlim( self.data.cbRange )
 			self.ax1.set_ylim( self.data.caRange )
 			self.ax1.set_aspect('equal')
@@ -730,6 +909,7 @@ class PlotPanel(wx.Panel):
 			self.ax1.set_xlabel('Azimuth')
 			self.ax1.set_aspect('auto')
 
+		#the zoomed plot
 		self.ax3Coll = self.ax3.scatter( 
 							  self.data.time,
 							  self.data.elev,
@@ -932,6 +1112,31 @@ class PlotPanel(wx.Panel):
 			#~ (self.data.cosa>=self.caRange[0])&(self.data.cosa<=self.caRange[1])&
 			#~ (self.data.cosb>=self.cbRange[0])&(self.data.cosb<=self.cbRange[1]) )[0]
 
+	def OffsetLimits(self,offset):
+		"""OffsetLimits(self,offset)
+		this comes up because sometimes you want the time from the second, 
+		and sometimes you want the time from the trigger.
+		
+		This takes care of updating the time limits history so that 
+		things refer to the same section of the flash
+		"""
+		
+		for i in range(len(self.limitsHistory)):
+			if not 'tRange' in self.limitsHistory[i]:
+				#can this even happen?
+				continue
+			self.limitsHistory[i]['tRange'][0] += offset - self.tOffset
+			self.limitsHistory[i]['tRange'][1] += offset - self.tOffset
+		
+		#update the waveform
+		if self.waveData != None:
+			self.waveData[0,:] += offset - self.tOffset
+		
+		self.tOffset = offset
+			
+				
+				
+
 	def GetLimits(self):
 		if self.data == None:
 			#no nothing
@@ -976,8 +1181,9 @@ class PlotPanel(wx.Panel):
 		if tRange != None:
 			self.data.tRange=tRange
 
-	def UpdatePlot(self):
-		"""redraws the main axis"""
+	def UpdatePlot(self, update_overview=False):
+		"""redraws the main axis
+		if update_overview=True, also redraws the upper righthand plot"""
 		if self.data == None:
 			return
 		self.data.limits()
@@ -1006,7 +1212,7 @@ class PlotPanel(wx.Panel):
 							self.lma.cosa,
 							s=6,
 							marker=self.marker,
-							facecolor=(0,0,0,.7),
+							facecolor=self.lmaColor,
 							edgecolor='None' )
 			
 			self.ax1.set_ylabel('cosa')
@@ -1029,7 +1235,7 @@ class PlotPanel(wx.Panel):
 							self.lma.elev,
 							s=6,
 							marker=self.marker,
-							facecolor=(0,0,0,.5),
+							facecolor=self.lmaColor,
 							edgecolor='None' )
 			
 			self.ax1.set_xlim( self.data.azRange )
@@ -1046,35 +1252,33 @@ class PlotPanel(wx.Panel):
 		if self.ax3Wave != None:
 			self.ax3Wave.remove()
 
-
+		#plot waveforms?
 		if self.waveHead != None:
-			#get the start sample, surprisingly difficult this
-			#t = (iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
-			#t*sRage*1000+preTrig = iMax
-			sRate = self.data.header.SampleRate
-			pSamp = self.data.header.PreTriggerSamples
-			sSam = int( (self.data.tRange[0]-self.data.tOffset)*sRate/1000+pSamp )
-			#get the number of samples, not so hard
-			numSam = int( (self.data.tRange[1]-self.data.tRange[0])/1000.*sRate )
-			print sSam, numSam, self.data.sSam[0], self.data.sSam[-1]-self.data.sSam[0]
-			#read in wave data and plot it under
-			self.waveData = it.read_raw_waveform_file_data( self.root.waveFile, 
-						self.waveHead,
-						sSam, 
-						numSam )
-			#normalize the wavedata
-			self.waveData[1,:] -= min( self.waveData[1,:] )
-			self.waveData[1,:] /= max( self.waveData[1,:] )
-			self.waveData[1,:] *= self.data.elRange[1]-self.data.elRange[0]
-			self.waveData[1,:] += self.data.elRange[0]
-			self.waveData[0,:] += self.data.tOffset
-			print self.waveData[0,0], self.waveData[0,-1], self.data.tRange
+			#this starts with a complicated conditional to determine if 
+			#we need to reload the waveform.  this should be avoided, as 
+			#it takes a while, especially for longer durations
+			if self.waveData == None:
+				self.readWave()
+			elif ( self.waveData[0,0] - self.data.tRange[0] < 0.1 ) and \
+				 ( self.waveData[0,-1]- self.data.tRange[1] > -0.1 ) and \
+				 ( self.waveData[0,-1]-self.waveData[0,0] < 
+					1.5*(self.data.tRange[1]-self.data.tRange[0])):
+				#we don't need to read the data
+				pass
+			else:
+				print self.waveData[0,0], self.data.tRange[0], self.waveData[0,0] - self.data.tRange[0] < 0.1 
+				print self.waveData[0,-1], self.data.tRange[1],self.waveData[0,-1]- self.data.tRange[1] > -0.1
+				print self.waveData[0,-1]-self.waveData[0,0], 1.5*(self.data.tRange[1]-self.data.tRange[0]), ( self.waveData[0,-1]-self.waveData[0,0] < 1.5*(self.data.tRange[1]-self.data.tRange[0]))
+				self.readWave()
+
 			#plot the data
 			self.ax3Wave, = self.ax3.plot( 
 						self.waveData[0,:], 
 						self.waveData[1,:], 
-						'k-',zorder=-10 )
+						self.waveColor,
+						zorder=-10 )
 			
+		#Scatter INTF
 		self.ax3Coll = self.ax3.scatter( 
 						  self.data.time,
 						  self.data.elev,
@@ -1082,13 +1286,15 @@ class PlotPanel(wx.Panel):
 						  marker=self.marker,
 						  facecolor=self.color,
 						  edgecolor=(1,1,1,0) )
+		
+		#plot LMA?
 		if self.lma != None:
 			self.ax3Lma = self.ax3.scatter( 
 							self.lma.time, 
 							self.lma.elev, 
 							s = 6,
 							marker = self.marker, 
-							facecolor=(0,0,0,.5),
+							facecolor=self.lmaColor,
 							edgecolor='None' )
 		self.ax3.set_xlim( self.data.tRange )
 		self.ax3.set_ylim( self.data.elRange )
@@ -1098,7 +1304,15 @@ class PlotPanel(wx.Panel):
 		#Remake current stuff only
 		if self.ax2Coll != None:
 			self.ax2Coll.remove()
-		
+		if update_overview:
+			#the overview plot likely just moved to a new location
+			#reset the limits
+			self.ax2.set_xlim( 	self.data.tStart+self.data.tOffset, 
+								self.data.tStop+ self.data.tOffset  )
+			self.ax2.pcolormesh( self.data.rawDataHist[2], 
+				self.data.rawDataHist[1], self.data.rawDataHist[0]**.1, 
+				edgecolor='None',cmap=cm.binary)
+
 		self.ax2Coll    = self.ax2.scatter( 
 						  self.data.time,
 						  self.data.elev,
@@ -1111,6 +1325,27 @@ class PlotPanel(wx.Panel):
 		self.root.ctrlPanel.filtTab.set_values()
 		self.redraw()
 
+	def readWave(self):
+			#get the start sample, surprisingly difficult this
+			#t = (iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
+			#t*sRage*1000+preTrig = iMax
+			sRate = self.data.header.SampleRate
+			pSamp = self.data.header.PreTriggerSamples
+			sSam = int( (self.data.tRange[0]-self.data.tOffset)*sRate/1000+pSamp )
+			#get the number of samples, not so hard
+			numSam = int( (self.data.tRange[1]-self.data.tRange[0])/1000.*sRate )
+			#read in wave data and plot it under
+			self.waveData = it.read_raw_waveform_file_data( self.root.waveFileS, 
+						self.waveHead,
+						sSam, 
+						numSam,
+						lpf=self.waveLpf )
+			#normalize the wavedata
+			self.waveData[1,:] -= min( self.waveData[1,:] )
+			self.waveData[1,:] /= max( self.waveData[1,:] )
+			self.waveData[1,:] *= self.data.elRange[1]-self.data.elRange[0]
+			self.waveData[1,:] += self.data.elRange[0]
+			self.waveData[0,:] += self.data.tOffset
 
 	def redraw(self):
 		if self._draw_pending:
@@ -1135,6 +1370,7 @@ class MainFrame(wx.Frame):
 		self.inFileS   = None
 		self.waveFileS = None
 		self.lmaFileS  = None
+		self.lmaFile   = None
 		
 		#these are the main 2 panels
 		self.plotPanel    = PlotPanel(self,self)	#self is the parent and root
@@ -1151,6 +1387,8 @@ class MainFrame(wx.Frame):
 		self.inFileS   = inFileS
 		self.lmaFileS  = None
 		self.waveFileS = None
+		self.plotPanel.waveHead = None
+		self.plotPanel.waveData = None
 		self.plotPanel.data = it.read_data_file(inFileS)
 		if self.ctrlPanel.fileTab.chkTime.GetValue():
 			print 't_offset', self.plotPanel.data.time_from_second()
@@ -1164,7 +1402,8 @@ class MainFrame(wx.Frame):
 		self.plotPanel.UpdatePlot()
 	
 	def OpenWave(self,inFileS):
-		self.waveFile = inFileS
+		self.waveFileS = inFileS
+		self.plotPanel.waveData = None
 		try:
 			self.plotPanel.waveHead = it.RawHeader(inFileS)
 		except:
