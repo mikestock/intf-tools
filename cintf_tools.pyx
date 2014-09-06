@@ -279,10 +279,21 @@ def proj_image( np.ndarray[	np.float64_t, ndim=2] xc,
 					np.ndarray[ np.float64_t, ndim=2] A, 
 					int N=50, 
 					float fs=360,
-					np.ndarray[ np.float64_t, ndim=2] bbox = np.array( [[-1.1,1.1],[-1.1,1.1]] )
+					np.ndarray[ np.float64_t, ndim=2] bbox = np.array( [[-1.1,1.1],[-1.1,1.1]] ),
+					float focaldistance=7000.
 					):
 	
-
+	"""
+	Computes the image of the sky from M baselines
+	xc - cross correlations
+	bl - baseline lengths in meters
+	dl - extra delays (eg cable lengths) in ns
+	A  - baseline orientation matrix
+	N  - number of pixels for the image
+	fs - sampling frequency (after interpolation)
+	bbox - the edges of the image to be made, should be square
+	focaldistance - for the range correction, in meters
+	"""
 	cdef float cosa, cosb, tau, dtau
 
 	#these are used to calculate the amplitude of the pixel
