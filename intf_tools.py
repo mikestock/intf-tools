@@ -46,6 +46,8 @@ NoiseSpectra= { 	(0,1):None,
 					2: None,
 					3: None }
 
+NoiseLock = False	#needed for parallel processing
+
 #radius of the earth
 Re   = 6371000		    #meters
 
@@ -173,6 +175,28 @@ class SettingsClass:
 									210.00,
 									192.03,
 									162.03 ] )
+		
+		#Array Diameter (in meters)
+		self.arrDiam    = 20
+		
+		#~ ####
+		#~ # 2014 A
+		#~ self.antLocs	= array( [ 	[ 0.000,  0.000],
+									#~ [ 0.000, 26.505],
+									#~ [20.265, 14.296],
+									#~ [ 0.000,  0.000] ] )
+		
+		#################
+		# The old values used for the 2011-2012 data
+		#~ t13 = (194 - 49.08)*pi/180
+		#~ t12 = (283 - 49.08)*pi/180
+		#~ self.antLocs 	= array( [ 	[ 0.00,  0.00 ],
+									#~ [ 9.88*sin(t12), 9.88*cos(t12) ],
+									#~ [10.28*sin(t13),10.28*cos(t13) ],
+									#~ [ 0.00,  0.00 ] ] )
+		#~ self.antDels	= array( [0,0,0,0] )	#equal length cables
+		
+		
 		########
 		# Default Values (files)
 		self.inFileS    = None
@@ -196,6 +220,7 @@ class SettingsClass:
 		# These values shouldn't change
 		self.sampleRate = 180.		#the sample rate of the digitizer in MS/s
 		self.bandwidth  = [20,80]
+		#self.bandwidth  = [35,80]
 		self.c		    = 3.0e8		#speed of light
 		self.minSep     = self.numSamples/2	#separation between 2 events, in samples
 		
@@ -292,6 +317,46 @@ class SettingsClass:
 		output += '#############'+ '\n'
 		output += '#Time, Azimuth, Elevation, cosa, cosb, Pk2Pk, RMS, eXpk, eCls, eStd, eMlt, Red, Green, Blue, startSample, iMax \n'
 		return output
+
+	def load_year(self,year):
+		if year == 2012:
+			#the antenna locations, in meters
+			#antenna locations for 2012 array configuration
+			self.antLocs    = array( [ [  0.00,  0.00 ],
+									   [ -9.62, -3.69 ],
+									   [  3.61, -9.43 ],
+									   [  0.00,  0.00 ] ] )
+			
+			#Antennas delays (in ns).
+			self.antDels    = array( [ 	0.00,
+										0.00,
+										0.00,
+										0.00 ] )
+			
+			#Array Diameter (in meters)
+			self.arrDiam    = 10.2		
+			
+			#The 2012 data had a bad noise source
+			self.bandwidth  = [35,80]
+		elif year == 2013:
+			#the antenna locations, in meters
+			#these are based on tape measurements.  While they've been 
+			#phased together based on 2013/07/08 data, they may still be off by 
+			#a constant factor.
+			self.antLocs    = array( [ [ -5.47,-15.39 ],
+									   [  0.00,  0.00 ],
+									   [-15.97,  5.86 ],
+									   [-28.54,-15.63 ] ] )
+			
+			#Antennas delays (in ns).
+			#phased together based on 2013/07/08 data
+			self.antDels    = array( [ 	198.00,
+										210.00,
+										192.03,
+										162.03 ] )
+			
+			#Array Diameter (in meters)
+			self.arrDiam    = 23.9			
 		
 class RawHeader:
 	"""RawHeader
@@ -360,6 +425,9 @@ class RawHeader:
 			self.hour   = date[3]
 			self.minute = date[4]
 			self.second = date[5]
+			#Fields that don't exist in the old data type
+			self.usecond= 0		
+			self.TrigType = 0
 			#decode the channel mask
 			channelMask = self.channelMask
 			if (channelMask >> 0) % 2:
@@ -437,9 +505,28 @@ class RawHeader:
 				self.preTriggerSamples = 10*self.sampleRate
 			else:
 				self.preTriggerSamples = 0
+		elif version == 14:
+			(self.year,
+			 self.month,
+			 self.day,
+			 self.hour,
+			 self.minute,
+			 self.second,
+			 self.usecond,
+			 self.TrigType,
+			 self.sampleRate,
+			 self.decimation,
+			 self.samplesPerRecord,
+			 self.ChRange,
+			 self.CouplingId,
+			 self.ImpednceId,
+			 self.BandwidthLimit,
+			 self.preTrigger, 
+			 self.postTrigger) = struct.unpack('<6Hd4I6I',header)	
+			self.preTriggerSamples = self.preTrigger*self.samplesPerRecord	
 		else:
-			print version
-			raise VersionError
+			print version, size
+			raise AttributeError
 
 	def read(self,fileS):
 		"""RawHeader.read(fileS)
@@ -486,36 +573,90 @@ class Event:
 	The Event class holds information about a single interferometer 
 	source, it does not process the source however
 	"""
-	def __init__(self,startSample,eamp0,eamp1,expeak,eclos,cosa,cosb,ants,iMax,(r,g,b)):
+	def __init__(self,startSample,iMax,erms,epkpk,expk,ecls,cosa,cosb,ants,(r,g,b)):
 		
-		Az, El = cosab2AzEl_perp(cosa, cosb)
-		#time
+
+		###
+		# These values are singletons
 		self.startSample = startSample
 		self.ants   = ants
+		self.color  = (	str(r).rjust(3),
+						str(g).rjust(3),
+						str(b).rjust(3) )		
 		self.time   = (iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate	#in ms
 		self.iMax   = iMax
 		self.sTime  = ( '%4.4f'%self.time).rjust( 9 )
-		self.color  = (	str(r).rjust(3),
-						str(g).rjust(3),
-						str(b).rjust(3))
+
 		self.ants   = ants	#the antenna indexes
-		#then we store an array of past solutions
-		self.iXpeak = [expeak]
-		self.iAmp0  = [eamp0]
-		self.iAmp1  = [eamp1]
-		self.iClos  = [eclos]
-		w = 1-(eclos**4)/(eclos**4+2.0**4)	#the weight
-		self.cosa   = [[cosa,w]]
-		self.cosb   = [[cosb,w]]
+		
+		###
+		# So, you can pass this lists (or arrays) of values, or single 
+		# values.  This is for backwards compatability mostly.  
+		try:
+			self.iXpk   = expk
+			self.iRms   = erms
+			self.iPkpk	= epkpk
+			self.iCls   = ecls
+			
+			self.cosa   = []
+			self.cosb   = []
+			
+			###
+			# this is an estimate of the center of the source
+			# used for weighting
+			mca = median( cosa )
+			mcb = median( cosb )
 
-		#deal with the permutations
-		self.permutations = 1.
-		if Settings.numAnts == 4:
-			self.permutations = 4.
+			
+			
+			#calculating the weights are more complicated
+			for i in range(len(cosa)):
+				w1 = 1-(ecls[i]**4)/(ecls[i]**4+2.0**4)
+				w2 = 1./( abs(cosa[i]-mca) + abs(cosb[i]-mcb) + 0.01 )
+				self.cosa.append( [cosa[i], w1*w2] )
+				self.cosb.append( [cosb[i], w1*w2] )
+		except:
+			self.iXpk   = [expk]
+			self.iRms   = [erms]
+			self.iPkpk  = [epkpk]
+			self.iCls   = [ecls]
+			w = 1-(ecls**4)/(ecls**4+2.0**4)	#the weight
+			self.cosa   = [[cosa,w]]
+			self.cosb   = [[cosb,w]]	
+		
+		
+					
+		#calculate Az and El
+		solsa = array(self.cosa)
+		solsb = array(self.cosb)
+				
+		###
+		# cosa and cosb here are in the local namespace
+		cosa = sum( solsa[:,0]*solsa[:,1] )/sum(solsa[:,1])
+		cosb = sum( solsb[:,0]*solsb[:,1] )/sum(solsb[:,1])
 
-		#the strings
-		eclos = abs(eclos)
-		self.strings( Az,El,cosa,cosb,expeak,eamp0,eamp1,eclos,100,1 )
+		#calculate the variance
+		vara = sum( solsa[:,1]*(solsa[:,0]-cosa)**2 )/sum(solsa[:,1])
+		varb = sum( solsb[:,1]*(solsb[:,0]-cosb)**2 )/sum(solsb[:,1])
+		estd = sqrt( vara + varb )
+		if estd < 1 and len(solsa) > 1:
+			estd = arcsin( estd )*180/pi
+		else:
+			estd = 100
+		
+		#calculate azimuth and elevation
+		Az, El = cosab2AzEl_perp( cosa, cosb )
+
+
+		#calculate the closure
+		#note, the weight (solsa[:,1]) is based on the closure, so 
+		#we are wieghting closure based on closure, which is funny
+		ecls = sum( abs(array(self.iCls))*solsa[:,1] )/sum(solsa[:,1])
+
+		#calculate new strings
+		self.strings( Az,El,cosa,cosb,max(self.iXpk),
+					  self.iRms[0],self.iPkpk[0],ecls,
+					  estd,len(self.cosa) )
 		
 			
 	def printout(self):
@@ -525,8 +666,8 @@ class Event:
 				self.El,
 				self.sCosa,
 				self.sCosb,
-				self.sAmp0,
-				self.sAmp1,
+				self.sPkpk,
+				self.sRms,
 				self.sXpeak,
 				self.sclos,
 				self.sstd,
@@ -545,8 +686,8 @@ class Event:
 				self.El,
 				self.sCosa,
 				self.sCosb,
-				self.sAmp0,
-				self.sAmp1,
+				self.sPkpk,
+				self.sRms,
 				self.sXpeak,
 				self.sclos,
 				self.sstd,
@@ -557,15 +698,15 @@ class Event:
 				self.startSample, 
 				self.iMax-self.startSample) )
 		f.close()
-	def strings(self,Az,El,cosa,cosb,expeak,eamp0,eamp1,eclos,estd,mult ):
+	def strings(self,Az,El,cosa,cosb,expeak,erms,epkpk,eclos,estd,mult ):
 		#calculate the fractional multiplicity
-		mult /= float(Settings.numSamples)/Settings.numIterate*self.permutations
+		mult /= float(Settings.numSamples)/Settings.numIterate
 		#Errors
 		self.sCosa  = ('%1.4f'%cosa     ).rjust( 8 )
 		self.sCosb  = ('%1.4f'%cosb     ).rjust( 8 )
 		self.sXpeak	= ('%0.2f'%expeak	).rjust( 5 )
-		self.sAmp0	= ('%4.1f'%eamp0	).rjust( 6 )
-		self.sAmp1	= ('%4.1f'%eamp1	).rjust( 6 )
+		self.sRms	= ('%4.1f'%erms		).rjust( 6 )
+		self.sPkpk	= ('%4.1f'%epkpk	).rjust( 6 )
 		self.sstd	= ('%3.2f'%estd		).rjust( 7 )
 		self.sclos  = ('%2.2f'%eclos	).rjust( 6 )
 		self.mult   = ('%0.2f'%mult     ).rjust( 5 )
@@ -573,14 +714,14 @@ class Event:
 		self.Az  	= ('%3.3f'%Az		).rjust( 8 )
 		self.El  	= ('%2.3f'%El		).rjust( 7 )
 		
-	def append(self,eamp0,eamp1,expeak,eclos,cosa,cosb):
+	def append(self,erms,epkpk,expk,ecls,cosa,cosb):
 		#append the erros
-		self.iXpeak.append(expeak)
-		self.iAmp0.append( eamp0 )
-		self.iAmp1.append( eamp1 )
-		self.iClos.append( eclos )
+		self.iXpk.append(expk)
+		self.iRms.append( erms )
+		self.iPkpk.append( epkpk )
+		self.iCls.append( ecls )
 		#append the locations
-		w = 1-(eclos**4)/(eclos**4+2.0**4)	#the weight
+		w = 1-(ecls**4)/(ecls**4+2.0**4)	#the weight
 		self.cosa.append( [cosa,w] )
 		self.cosb.append( [cosb,w] )
 		#print array(self.iAz)
@@ -607,11 +748,11 @@ class Event:
 		#calculate the closure
 		#note, the weight (solsa[:,1]) is based on the closure, so 
 		#we are wieghting closure based on closure, which is funny
-		eclos = sum( abs(array(self.iClos))*solsa[:,1] )/sum(solsa[:,1])
+		ecls = sum( abs(array(self.iCls))*solsa[:,1] )/sum(solsa[:,1])
 
 		#calculate new strings
-		self.strings( Az,El,cosa,cosb,max(self.iXpeak),
-					  max(self.iAmp0),max(self.iAmp1),eclos,
+		self.strings( Az,El,cosa,cosb,max(self.iXpk),
+					  self.iRms[0],self.iPkpk[0],ecls,
 					  estd,len(self.cosa) )
 
 class ProcHeader():
@@ -649,9 +790,9 @@ class LmaData():
 		self.elRange = [0,90]
 		self.caRange = [-1.,1.]	#cosine projection
 		self.cbRange = [-1.,1.]
-		self.xRange  = [-20,20]	#km
-		self.yRange	 = [-20,20]
-		self.zRange  = [2.8,20]
+		self.xRange  = [-20000,20000]	#m
+		self.yRange	 = [-20000,20000]
+		self.zRange  = [  3300,20000]
 		self.ciRange = [0,100]	#chisq for lma data
 		
 		self._time = []
@@ -706,7 +847,7 @@ class LmaData():
 				charge=int(  lineS[7])
 				mask = int(  lineS[8], 16)
 			else:
-				print len(lineS)
+				print 'error, lma parse', len(lineS)
 			
 			(Az,El,r) = calc_range_bearing(lat,lon,alt)
 			t += r/3e8
@@ -744,6 +885,7 @@ class LmaData():
 		self._x    = array(self._x)
 		self._y    = array(self._y)
 		self._z    = array(self._z)
+		self._R    = array(self._rang)
 		self._chisq= array(self._chisq)
 		self._charge=array(self._charge)
 		self._pwr  = array(self._pwr)
@@ -757,22 +899,25 @@ class LmaData():
 		self._time *= 1000
 
 		self.tRange = self._time[0],self._time[-1]
-		print self.tRange
 
 		#print self._time[0]
 		self.time = []
 		self.limits()
 		
-	def limits (self):
+	def limits (self, mask=None):
 		""" limit the data based on the ranges"""
-		mask = 	(self._time>=self.tRange[0] )&(self._time<=self.tRange[1]) &\
-				(self._azim>=self.azRange[0])&(self._azim<=self.azRange[1]) &\
-				(self._elev>=self.elRange[0])&(self._elev<=self.elRange[1]) &\
-				(self._cosa>=self.caRange[0])&(self._cosa<=self.caRange[1]) &\
-				(self._cosb>=self.cbRange[0])&(self._cosb<=self.cbRange[1]) &\
-				(self._chisq>=self.ciRange[0])&(self._chisq<=self.ciRange[1])
+		if mask == None:
+			mask = 	(self._time>=self.tRange[0] )&(self._time<=self.tRange[1]) &\
+					(self._x   >=self.xRange[0] )&(self._x   <=self.xRange[1]) &\
+					(self._y   >=self.yRange[0] )&(self._y   <=self.yRange[1]) &\
+					(self._z   >=self.zRange[0] )&(self._z   <=self.zRange[1]) &\
+					(self._azim>=self.azRange[0])&(self._azim<=self.azRange[1]) &\
+					(self._elev>=self.elRange[0])&(self._elev<=self.elRange[1]) &\
+					(self._cosa>=self.caRange[0])&(self._cosa<=self.caRange[1]) &\
+					(self._cosb>=self.cbRange[0])&(self._cosb<=self.cbRange[1]) &\
+					(self._chisq>=self.ciRange[0])&(self._chisq<=self.ciRange[1])
+				   
 		
-		print len(self.time),
 		self.time = self._time[mask]
 		self.azim = self._azim[mask]
 		self.elev = self._elev[mask]
@@ -783,12 +928,12 @@ class LmaData():
 		self.x    = self._x   [mask]
 		self.y    = self._y   [mask]
 		self.z    = self._z   [mask]
+		self.R    = self._R   [mask]
 		self.chisq= self._chisq[mask]
 		self.charge= self._charge[mask]
 		self.pwr  = self._pwr [mask]
 		self.cosa = self._cosa[mask]
 		self.cosb = self._cosb[mask]
-		print len(self.time)
 				
 		
 
@@ -873,9 +1018,10 @@ class ProcData():
 		self.cbRange  = [-1.1,1.1]	#cosb
 		#quality
 		self.tCls     = 1.25
-		self.tStd     = 1.0
-		self.tXpk     = 0.7
-		self.tMlt     = 0.7
+		self.tStd     = 1.25
+		self.tXpk     = 0.3
+		self.tMlt     = 0.3
+		#self.tXpk_min = 0.05	#a minimum correlation amplitude, needed for the new pseudo imaging processing
 
 		#find the index of various values
 		#if the header is proper, all these will be there
@@ -938,12 +1084,10 @@ class ProcData():
 		adjusts the time array to count from the beginning of the second, 
 		or at least attempts to do that.  It is accurate to about 20 ms
 		"""
-		print self.tStart
 		try:
 			tStartOff = self.tStart-self.tStart%1000
-			print 'tStart', self.tStart, tStartOff
 			tOffset   = self.header.uSecond/1000-tStartOff
-			print 'found usecond data', self.header.uSecond
+			#print 'found usecond data', self.header.uSecond
 		except:
 			tOffset = -self.tStart
 			print 'didn\'t find usecond data'
@@ -951,9 +1095,7 @@ class ProcData():
 			tOffset -= 1000
 		self.tRange[0] = self.tRange[0] - self.tOffset + tOffset
 		self.tRange[1] = self.tRange[1] - self.tOffset + tOffset
-		print 'tb',self.rawDataHist[2][0]
 		self.rawDataHist[2][:] += tOffset - self.tOffset
-		print 'tb',self.rawDataHist[2][0]
 		
 		self.tOffset   = tOffset
 		self.update()
@@ -1006,7 +1148,7 @@ class ProcData():
 		self.eCls = self.data[self.ieCls][self.mask]
 		self.eStd = self.data[self.ieStd][self.mask]
 		self.eMlt = self.data[self.ieMlt][self.mask]
-		self.freq = self.data[self.iRed:self.iBlue,self.mask]/255. #this is stored as a color
+		self.freq = self.data[self.iRed:self.iBlue,self.mask] #this is stored as a color
 		self.sSam = self.data[self.isSmp][self.mask]
 		self.iMax = self.data[self.iiMax][self.mask]
 		
@@ -1015,7 +1157,6 @@ class ProcData():
 		self.a95  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[ 99*N/100 ]]
 		self.a05  = self.data[self.ipkpk][self.data[self.ipkpk].argsort()[  1*N/20  ]]
 		self.aMin = self.data[self.ipkpk].min()
-		print N,self.aMin, self.a05, self.a95, self.aMax
 		
 		#make the bghist for the overview
 		self.dataHist = np.histogram2d(   self.elev, 
@@ -1030,9 +1171,11 @@ class ProcData():
 		eStd = self.tStd
 		eXpk = self.tXpk
 		eMlt = self.tMlt
+		eXpkm= self.tXpk/2
 		
 		mask         = ((self.rawData[self.ieCls]/eCls)**2+(self.rawData[self.ieStd]/eStd)**2 <  1) &\
-					   ((self.rawData[self.ieXpk]/eXpk)**2+(self.rawData[self.ieMlt]/eMlt)**2 >  1)
+					   ((self.rawData[self.ieXpk]/eXpk)**2+(self.rawData[self.ieMlt]/eMlt)**2 >  1) &\
+					   ((self.rawData[self.ieXpk]>eXpkm))
 		#mask = mask & (self.rawData[self.ieMlt] < eMlt)
 		self.data = self.rawData[:,mask]
 
@@ -1049,6 +1192,106 @@ class ProcData():
 		self.data = self.rawData[:,mask]
 		self.limits()
 		self.update()
+
+	def write( self, fileS ):
+		f = gzip.open(fileS,'w')
+
+		###
+		# Deal with the header, this is a pain
+		
+		output = ""
+		###
+		# Raw header
+		output += '#DataFileVersion    :'+ repr(self.header.ProcessedFileVersion) 	+ '\n'
+		output += '#TriggerTime        :'+ repr(self.header.TriggerTime)+ '\n'
+		output += '#Year               :'+ repr(self.header.Year)       + '\n'
+		output += '#Month              :'+ repr(self.header.Month)      + '\n'
+		output += '#Day                :'+ repr(self.header.Day)        + '\n'
+		output += '#Hour               :'+ repr(self.header.Hour)       + '\n'
+		output += '#Minute             :'+ repr(self.header.Minute)     + '\n'
+		output += '#Second             :'+ repr(self.header.Second)     + '\n'
+		output += '#uSecond            :'+ repr(self.header.uSecond)    + '\n'
+		output += '#############'+ '\n'
+		output += '#TriggerType        :'+ repr(self.header.TriggerType)   + '\n'
+		output += '#SampleRate         :'+ repr(self.header.sampleRate*1000000) + '\n'
+		output += '#PreTriggerSamples  :'+ repr(self.header.PreTriggerSamples) + '\n'
+		output += '#############'+ '\n'
+
+		###
+		# Processing header		
+		output += '#inFileS     :'+ repr(self.header.inFileS)			+ '\n'
+		output += '#outFileS    :'+ repr(self.header.outFileS)			+ '\n'
+		output += '#noiseFileS  :'+ repr(self.header.noiseFileS)		+ '\n'
+		output += '#startSample :'+ repr(self.header.startSample)		+ '\n'
+		output += '#verbose     :'+ repr(self.header.verbose)			+ '\n'
+		output += '#debug       :'+ repr(self.header.debug)				+ '\n'
+		output += '#windowing   :'+ repr(self.header.windowing)			+ '\n'
+		output += '#noise       :'+ repr(self.header.noise)				+ '\n'
+		output += '#storeSpec   :'+ repr(self.header.storeSpec)			+ '\n'
+		output += '#sampleRate  :'+ repr(self.header.sampleRate)		+ '\n'
+		output += '#bandwidth   :'+ repr(self.header.bandwidth)			+ '\n'
+		output += '#numSamples  :'+ repr(self.header.numSamples)		+ '\n'
+		output += '#numIterate  :'+ repr(self.header.numIterate)		+ '\n'
+		output += '#numInterp   :'+ repr(self.header.numInterp)			+ '\n'
+		output += '#c           :'+ repr(self.header.c)					+ '\n'
+		output += '#############'+ '\n'
+		output += '#AntsUsed    :'+ repr(self.header.AntsUsed)			+ '\n'
+		output += '#Ant0loc     :'+ repr(list(self.header.Ant0loc))  	+ '\n'
+		output += '#Ant0delay   :'+ repr(self.header.Ant0delay)        	+ '\n'
+		output += '#Ant1loc     :'+ repr(list(self.header.Ant1loc))  	+ '\n'
+		output += '#Ant1delay   :'+ repr(self.header.Ant1delay)        	+ '\n'
+		output += '#Ant2loc     :'+ repr(list(self.header.Ant2loc))  	+ '\n'
+		output += '#Ant2delay   :'+ repr(self.header.Ant2delay)        	+ '\n'
+		output += '#Ant3loc     :'+ repr(list(self.header.Ant3loc))  	+ '\n'
+		output += '#Ant3delay   :'+ repr(self.header.Ant3delay)        	+ '\n'
+		output += '#############'+ '\n'
+		output += '#minSep      :'+ repr(self.header.minSep)			+ '\n'
+		output += '#Saturation  :'+ repr(self.header.Saturation)		+ '\n'
+		#output += '#arguments  ', self.arguments
+		output += '#############'+ '\n'
+		output += '#Time, Azimuth, Elevation, cosa, cosb, Pk2Pk, RMS, eXpk, eCls, eStd, eMlt, Red, Green, Blue, startSample, iMax \n'
+
+		f.write(output)
+
+		for i in range(len(self.time)):
+			
+			#time
+			sTime   = ('%4.4f'%self.time[i]	 ).rjust( 9 )
+			#Errors
+			sXpeak	= ('%0.2f'%self.eXpk[i]	 ).rjust( 5 )
+			sRms	= ('%4.1f'%self.rms[i]	 ).rjust( 7 )
+			sPkpk	= ('%4.1f'%self.pkpk[i]  ).rjust( 8 )
+			sstd	= ('%3.2f'%self.eStd[i]	 ).rjust( 7 )
+			sclos   = ('%2.2f'%self.eCls[i]	 ).rjust( 6 )
+			smult   = ('%0.2f'%self.eMlt[i]  ).rjust( 5 )
+			#location
+			sCosa   = ('%1.4f'%self.cosa[i]  ).rjust( 8 )
+			sCosb   = ('%1.4f'%self.cosb[i]  ).rjust( 8 )
+			sAz  	= ('%3.3f'%self.azim[i]	 ).rjust( 8 )
+			sEl  	= ('%2.3f'%self.elev[i]	 ).rjust( 7 )
+			#freq
+			#~ scolor  = (	str(self.freq[i][0]).rjust(3),
+						#~ str(self.freq[i][1]).rjust(3),
+						#~ str(self.freq[i][2]).rjust(3) )		
+
+			f.write("%s %s %s %s %s %s %s %s %s %s %s %s %s %s  %i  %i\n"%\
+				(	sTime,
+					sAz,
+					sEl,
+					sCosa,
+					sCosb,
+					sPkpk,
+					sRms,
+					sXpeak,
+					sclos,
+					sstd,
+					smult,
+					'  0',
+					'  0',
+					'  0',
+					self.sSam[i], 
+					self.iMax[i]) )
+		f.close()
 
 
 #########
@@ -1098,7 +1341,7 @@ def read_raw_file_data(fileS = None, header=None, startSample = None, numSamples
 			array(chCD).reshape(numSamples,2)[:,0],
 			array(chCD).reshape(numSamples,2)[:,1]])
 	#the alternative is Mark's data, which is split into 4 files
-	elif header.version >= 5 and header.version <= 12:
+	elif (header.version >= 5 and header.version <= 12) or header.version==14:
 		try:
 			startLoc  = int(startSample*2)
 			#channel A
@@ -1131,11 +1374,15 @@ def read_raw_file_data(fileS = None, header=None, startSample = None, numSamples
 			array( chD ) ])
 	return data
 
-def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=50000.):
+def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=50000., timems=True, lpf=3):
 	"""read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=10000):
 	reads in data from a single channel for use as plotting a waveform
 	
 	Only works for version 5 and above data
+	
+	lpf - 
+		low pass filter, in MHz.  
+		The default value is very low due to excess noise on the fast antenna
 	
 	maxSamples - 
 		If more than maxSamples data is requested, the waveform 
@@ -1163,15 +1410,32 @@ def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, nu
 		if decimation == 0:
 			blockSize *=2
 
-	wave = []
-	time = []
+	print 'reading with decimation %i/%i'%(decimation,blockSize)
+
+	wave = []	#the data samples (in digitizer units)
+	time = []	#the time (in ms)
+
 	#version 5 and above data, split into files
-	if header.version >= 5 and header.version <= 12:
+	if (header.version >= 5 and header.version <= 12) or header.version==14:
 		iSample = startSample
 		#how many samples/block should we keep
 		iTime = arange(blockSize)
 		if not os.path.exists(fileS):
 			return None
+		if lpf:
+			from cintf_tools import firstorder
+			RC = 1./(2*pi*lpf)	#time constant, us
+			dT = 1./180			#sampling period
+			alpha = dT/(dT+RC)
+			z1=0
+			z2=0
+		#~ if lpf:
+			#~ freq = fft.fftfreq( 2*blockSize )*180
+			#~ df = abs( freq[0]-freq[1] )
+			#~ W    = zeros( 2*blockSize )
+			#~ W[ abs(freq) < lpf ] = 1
+			#~ #not quite so sharp and edge
+			#~ W[ (abs(freq)<lpf+df)&(abs(freq)>=lpf) ] = .5
 		while iSample < startSample + numSamples:		
 			try:
 				startLoc  = int(iSample*2)
@@ -1182,8 +1446,22 @@ def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, nu
 				f.close()
 			except:
 				#hit end of file
+				print 'EOF'
 				break
-			chunk = array(chunk)
+			chunk = array(chunk,dtype='float')
+			
+			#low pass filter?
+			if lpf != None:
+				#print z1,z2
+				chunk = firstorder(chunk, alpha, z1)
+				z1 = chunk[-1]
+				#print z1, z2, chunk
+				chunk = firstorder(chunk, alpha, z2)
+				z2 = chunk[-1]
+			#~ if lpf != None:
+				#~ offset = mean(chunk)
+				#~ chunk = real( fft.ifft( W* fft.fft(chunk-offset, 2*blockSize) )[:blockSize] )+offset
+			
 			#calculate the decimation mask
 			mask  = (abs(chunk-mean(chunk))).argsort()[-decimation:]
 			mask.sort()
@@ -1197,12 +1475,122 @@ def read_raw_waveform_file_data( fileS = None, header=None, startSample=None, nu
 		return None
 	#truncate
 	output = array( [time,wave],dtype='float' )
-	print output.shape, decimation
+	#print output.shape, decimation
 	output = output[ :, output[0,:]<= startSample+numSamples ]
-	#convert time to ms
+	#convert time to ms (if timems==True), otherwise return sample numbers
 	#(iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
-	output[0,:] = (output[0,:]-header.preTriggerSamples)*1000./header.sampleRate
+	if timems:
+		output[0,:] = (output[0,:]-header.preTriggerSamples)*1000./header.sampleRate
 	return  output
+
+def read_raw_logrf_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=50000., timems=True, avef=1):
+	"""read_raw_waveform_file_data( fileS = None, header=None, startSample=None, numSamples=None, maxSamples=10000):
+	reads in data from a single channel for use as plotting a waveform
+	
+	Only works for version 5 and above data
+	
+	avef - 
+		averaging filter, implemented as a low pass filter after the power is calculated
+	
+	maxSamples - 
+		If more than maxSamples data is requested, the waveform 
+		is decimated
+	"""
+	blockSize  = 2048	#how many samples to read at a time
+	maxSamples = float(maxSamples)	#needs to be a float for later math
+	vpd 	    = 0.5 / 2**15		#converts digitizer units to volts
+	#get the variables we need in the local namespace
+	if fileS == None:
+		fileS       = Settings.inFileS
+	if header == None:
+		header      = Settings.header
+	if startSample == None:
+		startSample = Settings.startSample
+	if numSamples == None:
+		numSamples  = Settings.numSamples
+
+	#determine the decimation amount
+	decimation = 0
+	while decimation == 0:
+		if numSamples > maxSamples:
+			decimation = int( maxSamples*blockSize/numSamples )
+		else:
+			decimation = blockSize
+		if decimation == 0:
+			blockSize *=2
+
+	print 'reading with decimation %i/%i'%(decimation,blockSize)
+
+	wave = []	#the data samples (in digitizer units)
+	time = []	#the time (in ms)
+
+	#version 5 and above data, split into files
+	if (header.version >= 5 and header.version <= 12) or header.version==14:
+		iSample = startSample
+		#how many samples/block should we keep
+		iTime = arange(blockSize)
+		if not os.path.exists(fileS):
+			return None
+		if avef != None:
+			from cintf_tools import firstorder
+			RC = 1./(2*pi*avef)	#time constant, us
+			dT = 1./180			#sampling period
+			alpha = dT/(dT+RC)
+			z1=0
+			z2=0
+		while iSample < startSample + numSamples:		
+			try:
+				startLoc  = int(iSample*2)
+				#channel whatever we're on
+				f = open( fileS,'r')
+				f.seek(startLoc+header.size)
+				chunk = struct.unpack( '%iH'%blockSize, f.read(blockSize*2) )
+				f.close()
+			except:
+				#hit end of file
+				print 'EOF'
+				break
+			chunk = array(chunk,dtype='float')
+			chunk -= mean(chunk)
+			
+			###
+			# calculate power
+			chunk = 10*log10( (chunk**2+1)*vpd**2/50 )
+			
+			#low pass filter?
+			if avef != None:
+				#print z1,z2
+				chunk = firstorder(chunk, alpha, z1)
+				z1 = chunk[-1]
+				#print z1, z2, chunk
+				chunk = firstorder(chunk, alpha, z2)
+				z2 = chunk[-1]
+			#~ if lpf != None:
+				#~ offset = mean(chunk)
+				#~ chunk = real( fft.ifft( W* fft.fft(chunk-offset, 2*blockSize) )[:blockSize] )+offset
+			
+			#calculate the decimation mask
+			mask  = (abs(chunk-mean(chunk))).argsort()[-decimation:]
+			mask.sort()
+			#append to the previous data
+			wave  += chunk[mask].tolist()
+			time  += (iTime[mask]+iSample).tolist()
+			
+			#increment counter
+			iSample += blockSize
+	else:
+		return None
+	#truncate
+	output = array( [time,wave],dtype='float' )
+	#print output.shape, decimation
+	output = output[ :, output[0,:]<= startSample+numSamples ]
+	#convert time to ms (if timems==True), otherwise return sample numbers
+	#(iMax-Settings.preTriggerSamples)/1000./Settings.sampleRate
+	if timems:
+		output[0,:] = (output[0,:]-header.preTriggerSamples)*1000./header.sampleRate
+	return  output
+
+
 
 def write_hdf5_file(data, outFileS):
 	import h5py
@@ -1320,7 +1708,7 @@ def parse_ascii_data(lines_i):
 	N = len(lines_i)-i
 	M = len(lines_i[i].split())
 	#M better be 16
-	print N,M
+	#print N,M
 	if M < 16:
 		#old v3 data without cosa, cosb
 		M += 2
@@ -1373,9 +1761,14 @@ def init_noise_spectra(fileS=None):
 	global NoiseSpectra
 
 	for key in NoiseSpectra.keys():
-		NoiseSpectra[key] = zeros( Settings.numSamples )
+		NoiseSpectra[key] = [zeros( 2*Settings.numSamples ),0]
 	
 def write_noise_spectra(fileS=None):
+	global NoiseSpectra
+	if NoiseSpectra[0] == None:
+		#there's a problem!
+		print 'No Noise Spectra to Save'
+		return None
 	if fileS == None:
 		fileS = Settings.noiseFileS
 	spec = zeros([2*Settings.numSamples,16])
@@ -1397,6 +1790,9 @@ def write_noise_spectra(fileS=None):
 	spec[:,14]= real( NoiseSpectra[   2   ][0] )
 	spec[:,15]= real( NoiseSpectra[   3   ][0] )
 	
+	for key in NoiseSpectra.keys():
+		print NoiseSpectra[key][1]
+	
 	print 'Saving noise spectra averaged over %i windows to:'%NoiseSpectra[ 0 ][1], fileS
 	savetxt( fileS,spec)	
 
@@ -1409,20 +1805,27 @@ def pkpk(arr):
 def rms(arr):
 	return (mean(arr**2))**.5
 
-def calc_range_bearing(lat,lon,alt):
+def calc_range_bearing(lat,lon,alt,lat0=None,lon0=None,alt0=None):
+	if lat0 == None:
+		lat0 = Settings.intfLoc[0]
+	if lon0 == None:
+		lon0 = Settings.intfLoc[1]
+	if alt0 == None:
+		alt0 = Settings.intfLoc[2]
+	
 	#distance
 	#d is along the earth
-	a = sin( (Settings.intfLoc[0]-lat)/2 )**2 + cos(Settings.intfLoc[0])*cos(lat)*sin( (Settings.intfLoc[1]-lon)/2 )**2
+	a = sin( (lat0-lat)/2 )**2 + cos(lat0)*cos(lat)*sin( (lon0-lon)/2 )**2
 	d = (Re)*2*arctan2( sqrt(a), sqrt(1-a) )
 
 	#print d, alt2, alt1
 	#elevation
-	El = arctan( abs(alt-Settings.intfLoc[2])/d )
+	El = arctan( abs(alt-alt0)/d )
 	#get the range
-	r  = sqrt( d**2 + abs(alt-Settings.intfLoc[2])**2 )
+	r  = sqrt( d**2 + abs(alt-alt0)**2 )
 
 	#bearing
-	Az = arctan2( sin(lon-Settings.intfLoc[1])*cos(lat), cos(Settings.intfLoc[0])*sin(lat)-sin(Settings.intfLoc[0])*cos(lat)*cos(lon-Settings.intfLoc[1]) )
+	Az = arctan2( sin(lon-lon0)*cos(lat), cos(lat0)*sin(lat)-sin(lat0)*cos(lat)*cos(lon-lon0) )
 	if Az < 0:
 		Az += 2*pi
 	
@@ -1685,24 +2088,28 @@ def fpad(X,M):
 	
 	return output
 	
-def xmax(x):
-	xMax = argmax(x)
+def xmax(x, xMax=None):
+	if xMax == None:
+		xMax = argmax(x)
 	#these catches should never come up
 	if xMax == 0:
 		xMax +=1
 	if xMax == len(x)-1:
 		xMax -=1
-	para_fit = polyfit([0,1,2],x[xMax-1:xMax+2],2)
-	#take the derivative
-	para_max = [para_fit[0]*2,para_fit[1]]
-	para_max = roots(para_max)
+	try:	#this is catching the rest of the exceptions I'm not expecting
+		para_fit = polyfit([-1,0,1],x[xMax-1:xMax+2],2)
+		#take the derivative
+		para_max = [para_fit[0]*2,para_fit[1]]
+		para_max = roots(para_max)
+	except:
+		return 0
 	#the happens if you put all 0's into the max finder
 	if not para_max:
 		return 0
 	else:
 		return xMax + para_max[0]
 
-def store_spectra(ffts,ants):
+def store_spectra(ffts,ants=None):
 	"""store_spectra(ffts, ants)
 	appends the data in ffts to the noise spectra
 	each spectra in NoiseSpectra has the average spectra information and 
@@ -1715,36 +2122,66 @@ def store_spectra(ffts,ants):
 		None
 	"""
 	global NoiseSpectra
+
+	if NoiseSpectra[0] == None:
+		#then this spectra hasn't been set yet
+		init_noise_spectra()
 	
-	#go through the permutations of the cross spectra
-	i = 0
-	while i < len(ants) -1:
-		j = i+1
-		while j < len(ants):
-			key = tuple( sorted( (ants[i], ants[j]) ) )
+	###
+	# Multi-baseline
+	if ants == None:
+		for i in range(ffts.shape[0]):
+			#it has been set, so we average this fft with the last one
+			N = float(NoiseSpectra[i][1])
+			NoiseSpectra[i] = (NoiseSpectra[i][0]*(N/(N+1)) + \
+									abs(ffts[i])**2/(N+1),
+									N+1)
 			
-			if NoiseSpectra[ key ] == None:
-				#then this spectra hasn't been set yet
-				NoiseSpectra[key] = (ffts[i]*ffts[j].conj(),1)
-			else:
+			#cross spectra
+			for j in range( i+1, ffts.shape[0] ):
+				if i == j:
+					continue
+				key = (i,j)
 				#it has been set, so we average this fft with the last one
 				N = float(NoiseSpectra[key][1])
 				NoiseSpectra[key] = (NoiseSpectra[key][0]*(N/(N+1)) + \
-										ffts[i]*ffts[j].conj()/(N+1),
+										(ffts[i]*ffts[j].conj())/(N+1),
 										N+1)
-			j += 1
-		i += 1
-	#store the auto spectra
-	for i in range(len(ants)):
-		key = ants[i]
-		if NoiseSpectra[key] == None:
-			#then this spectra hasn't been set yet
-			NoiseSpectra[key] = ( abs(ffts[i])**2, 1)
-		else:
-			#it has been set, so we average this fft with the last one
-			NoiseSpectra[key] = (NoiseSpectra[key][0]*(N/(N+1)) + \
-									abs(ffts[i])**2/(N+1),
-									N+1)
+	
+	###
+	# Old processing		
+	else:
+		print 'single processing noise'
+		#go through the permutations of the cross spectra
+		i = 0
+		while i < len(ants) -1:
+			j = i+1
+			while j < len(ants):
+				key = tuple( sorted( (ants[i], ants[j]) ) )
+				
+				if NoiseSpectra[ key ] == None:
+					#then this spectra hasn't been set yet
+					NoiseSpectra[key] = (ffts[i]*ffts[j].conj(),1)
+				else:
+					#it has been set, so we average this fft with the last one
+					N = float(NoiseSpectra[key][1])
+					NoiseSpectra[key] = (NoiseSpectra[key][0]*(N/(N+1)) + \
+											ffts[i]*ffts[j].conj()/(N+1),
+											N+1)
+				j += 1
+			i += 1
+		#store the auto spectra
+		for i in range(len(ants)):
+			key = ants[i]
+			if NoiseSpectra[key] == None:
+				#then this spectra hasn't been set yet
+				NoiseSpectra[key] = ( abs(ffts[i])**2, 1)
+			else:
+				#it has been set, so we average this fft with the last one
+				NoiseSpectra[key] = (NoiseSpectra[key][0]*(N/(N+1)) + \
+										abs(ffts[i])**2/(N+1),
+										N+1)
+
 
 def symm_smooth( arr,M ):
 	"""symm_smooth( arr, M)
